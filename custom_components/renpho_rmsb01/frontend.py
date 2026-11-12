@@ -48,7 +48,7 @@ async def async_setup_card(hass: HomeAssistant) -> None:
                 resource.get("url", "").startswith(card_url)
                 for resource in resources.async_items()
             ):
-                await resources.async_create({"res_type": "module", "url": card_url})
+                await resources.async_create_item({"res_type": "module", "url": card_url})
                 _LOGGER.info("Registered Renpho card resource %s", card_url)
         except Exception:
             _LOGGER.exception(
