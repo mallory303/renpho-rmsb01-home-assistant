@@ -1,11 +1,16 @@
 """Renpho R-MSB01 Home Assistant integration."""
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from .const import CONF_ADDRESS
 from .coordinator import RenphoCoordinator
+from .frontend import async_setup_card
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR]
 
@@ -14,6 +19,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a configured scale."""
     coordinator = RenphoCoordinator(hass, entry)
     entry.runtime_data = coordinator
+    try:
+        await async_setup_card(hass)
+    except Exception:
+        _LOGGER.exception("Could not set up the optional Renpho Lovelace card")
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(coordinator.async_start())
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))

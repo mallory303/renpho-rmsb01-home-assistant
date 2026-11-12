@@ -13,11 +13,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Install test dependencies
         run: python3 -m pip install -r requirements-test.txt
       - name: Run integration protocol tests
         run: python3 -m unittest discover -s tests -v
       - name: Lint integration and tests
         run: ruff check custom_components tests
+      - name: Check card JavaScript
+        run: node --check custom_components/renpho_rmsb01/www/renpho-rmsb01-card.js
+      - name: Test card configuration and metric selection
+        run: node --test tests/card.test.mjs
       - name: Compile Python
         run: python3 -m compileall -q custom_components tests

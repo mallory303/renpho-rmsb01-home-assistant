@@ -46,6 +46,41 @@ Repeated advertisements are suppressed after a successful measurement for 45 sec
 
 Once populated, values remain available while the scale sleeps. After an HA restart, they populate on the next new measurement; Recorder history is unaffected.
 
+## Renpho Scale card
+
+Version 0.2.0 includes a dashboard card with a **visual editor**. Open a dashboard, choose **Add card → Renpho Scale**, then:
+
+1. Select the scale's weight sensor.
+2. Open **Values to display** and select exactly which of the 14 measurements you want.
+3. Optionally change the card title and save.
+
+Select any value tile to open its normal Home Assistant history/more-info dialog. The card resource is copied to `/local/` and registered automatically, including a content hash for reliable updates and restarts.
+
+Equivalent YAML:
+
+```yaml
+type: custom:renpho-rmsb01-card
+title: Renpho Scale
+entity: sensor.renpho_r_msb01_weight
+metrics:
+  - weight
+  - bmi
+  - body_fat
+  - body_water
+  - muscle_percentage
+  - bone_mass
+  - body_age
+  - last_measurement
+```
+
+The sibling entity IDs are derived from the weight sensor's prefix. If you rename individual entities, optional YAML `entities` overrides are available:
+
+```yaml
+entities:
+  body_fat: sensor.my_custom_fat_sensor
+  bmi: sensor.my_custom_bmi_sensor
+```
+
 ## Privacy
 
 Measurements stay local between the scale and Home Assistant. The configured profile is sent directly to the scale over BLE. No cloud endpoint is used. This repository contains only integration code and synthetic test fixtures—not captured personal measurements.
@@ -65,9 +100,11 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-test.txt
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/ruff check custom_components tests
+node --check custom_components/renpho_rmsb01/www/renpho-rmsb01-card.js
+node --test tests/card.test.mjs
 ```
 
-The tests cover synthetic live/stored TN decoding, resistance transforms, the complete GATT handshake, profile encoding, advertisement validation, and disconnect handling.
+The tests cover synthetic live/stored TN decoding, resistance transforms, the complete GATT handshake, profile encoding, advertisement validation, disconnect handling, and card metric selection/entity mapping.
 
 ## Scope
 
