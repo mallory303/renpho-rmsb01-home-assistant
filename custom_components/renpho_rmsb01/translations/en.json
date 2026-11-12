@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add Renpho R-MSB01",
+        "description": "Enter the scale's Bluetooth address and the profile to use for visitor measurements. The scale may be asleep during setup.",
+        "data": {
+          "name": "Name",
+          "address": "Bluetooth address (AA:BB:CC:DD:EE:FF)",
+          "age": "Age",
+          "height": "Height (cm)",
+          "gender": "Gender (male or female)"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "Set up {name}",
+        "description": "Scale discovered at {address}. Configure the profile sent as visitor 254. Stored scale users are not modified.",
+        "data": {
+          "age": "Age",
+          "height": "Height (cm)",
+          "gender": "Gender (male or female)"
+        }
+      }
+    },
+    "error": {
+      "invalid_address": "Enter a valid Bluetooth MAC address."
+    },
+    "abort": {
+      "already_configured": "This scale is already configured.",
+      "not_supported": "The discovered device is not a supported R-MSB01 scale."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Measurement profile",
+        "description": "Used for visitor measurements. Changing it does not modify stored users on the scale.",
+        "data": {
+          "age": "Age",
+          "height": "Height (cm)",
+          "gender": "Gender (male or female)"
+        }
+      }
+    }
+  }
+}
