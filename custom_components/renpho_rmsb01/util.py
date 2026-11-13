@@ -3,6 +3,8 @@
 from typing import Any
 
 MODEL_IDS = (b"\x09\x16", b"\x08\xa5", b"\x0a\x5e", b"\x0a\x5f", b"\x0a\x60")
+SCALE_NAME = "Renpho-Scale"
+SCALE_SERVICE_UUID = "0000ffe0-0000-1000-8000-00805f9b34fb"
 
 
 def manufacturer_payload(service_info: Any) -> bytes:
@@ -10,20 +12,31 @@ def manufacturer_payload(service_info: Any) -> bytes:
     return service_info.manufacturer_data.get(0xFFFF, b"")
 
 
+def is_minimal_rmsb01(service_info: Any) -> bool:
+    """Identify the verified connectable name/UUID-only advertisement."""
+    return (
+        getattr(service_info, "name", None) == SCALE_NAME
+        and SCALE_SERVICE_UUID in getattr(service_info, "service_uuids", ())
+        and bool(getattr(service_info, "connectable", False))
+    )
+
+
 def is_rmsb01(service_info: Any) -> bool:
-    """Identify the verified R-MSB01 VA/TN advertisement."""
+    """Identify either verified R-MSB01 advertisement variant."""
     payload = manufacturer_payload(service_info)
     return (
         len(payload) > 15
         and payload[:2] in MODEL_IDS
         and payload[11] == 0x61
-    )
+    ) or is_minimal_rmsb01(service_info)
 
 
 def uses_resistance_encryption(service_info: Any) -> bool:
-    """Return whether VA impedance bit permutation is advertised."""
+    """Use the advertised flag, or the verified R-MSB01 minimal-packet behavior."""
     payload = manufacturer_payload(service_info)
-    return len(payload) > 15 and bool((payload[15] >> 2) & 1)
+    if len(payload) > 15:
+        return bool((payload[15] >> 2) & 1)
+    return is_minimal_rmsb01(service_info)
 
 
 def normalized_address(address: str) -> str:

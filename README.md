@@ -22,7 +22,7 @@ Manual installation also works: copy `custom_components/renpho_rmsb01` to `/conf
 ## How it works
 
 1. A scale advertisement wakes the integration.
-2. HA validates the R-MSB01 manufacturer/model data and opens one bounded GATT session.
+2. HA validates either the R-MSB01 manufacturer/model data or the verified connectable **Renpho-Scale + FFE0** advertisement, then opens one bounded GATT session.
 3. The integration performs the VA handshake and selects **visitor 254** using the configured profile. Stored scale users are not modified.
 4. A complete TN measurement updates all sensors together, then HA disconnects.
 5. Failed or interrupted sessions retain the previous completed values.

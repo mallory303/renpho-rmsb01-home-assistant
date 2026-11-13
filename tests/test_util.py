@@ -30,6 +30,32 @@ class AdvertisementTest(unittest.TestCase):
         self.assertFalse(util.is_rmsb01(advertisement(bytes(payload))))
         self.assertFalse(util.is_rmsb01(advertisement(b"\x09\x16")))
 
+    def test_accepts_verified_minimal_connectable_advertisement(self) -> None:
+        info = SimpleNamespace(
+            name="Renpho-Scale",
+            service_uuids=[util.SCALE_SERVICE_UUID],
+            manufacturer_data={},
+            connectable=True,
+        )
+        self.assertTrue(util.is_rmsb01(info))
+        self.assertTrue(util.uses_resistance_encryption(info))
+
+    def test_minimal_advertisement_requires_exact_name_uuid_and_connection(self) -> None:
+        info = SimpleNamespace(
+            name="Renpho-Scale",
+            service_uuids=[util.SCALE_SERVICE_UUID],
+            manufacturer_data={},
+            connectable=True,
+        )
+        for field, value in (
+            ("name", "Other-Scale"),
+            ("service_uuids", []),
+            ("connectable", False),
+        ):
+            changed = SimpleNamespace(**{**vars(info), field: value})
+            self.assertFalse(util.is_rmsb01(changed), field)
+            self.assertFalse(util.uses_resistance_encryption(changed), field)
+
 
 if __name__ == "__main__":
     unittest.main()
