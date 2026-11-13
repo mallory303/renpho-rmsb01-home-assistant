@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import CONF_ADDRESS
 from .coordinator import RenphoCoordinator
+from .entity_ids import migrate_entity_unique_ids
 from .frontend import async_setup_card
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await async_setup_card(hass)
     except Exception:
         _LOGGER.exception("Could not set up the optional Renpho Lovelace card")
+    migrate_entity_unique_ids(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(coordinator.async_start())
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))

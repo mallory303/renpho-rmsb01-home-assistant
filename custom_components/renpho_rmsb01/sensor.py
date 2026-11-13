@@ -22,6 +22,7 @@ from .const import (
     DOMAIN,
     MODEL,
 )
+from .entity_ids import entity_unique_id
 from .profiles import get_profiles
 
 SENSORS = (
@@ -143,7 +144,7 @@ class RenphoSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, description: SensorEntityDescription) -> None:
         super().__init__(coordinator)
         self.entity_description = description
-        self._attr_unique_id = f"{coordinator.address}_{description.key}"
+        self._attr_unique_id = entity_unique_id(coordinator.entry, description.key)
         self._attr_device_info = _device_info(coordinator.entry)
 
     @property
@@ -174,8 +175,8 @@ class RenphoProfileSensor(CoordinatorEntity, RestoreSensor):
         self.entity_description = description
         self._profile_id = profile[CONF_PROFILE_ID]
         self._attr_name = f"{profile[CONF_PROFILE_NAME]} {description.name}"
-        self._attr_unique_id = (
-            f"{coordinator.entry.data[CONF_ADDRESS]}_{self._profile_id}_{description.key}"
+        self._attr_unique_id = entity_unique_id(
+            coordinator.entry, f"{self._profile_id}_{description.key}"
         )
         self._attr_device_info = _device_info(coordinator.entry)
         self._restored_value = None

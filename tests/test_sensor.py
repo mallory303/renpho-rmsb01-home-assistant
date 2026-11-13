@@ -38,6 +38,8 @@ def load_sensor():
     device = ModuleType("homeassistant.helpers.device_registry")
     device.CONNECTION_BLUETOOTH = "bluetooth"
     device.DeviceInfo = lambda **kwargs: kwargs
+    entity_registry = ModuleType("homeassistant.helpers.entity_registry")
+    entity_registry.async_get = lambda hass: None
     update = ModuleType("homeassistant.helpers.update_coordinator")
 
     class CoordinatorEntity:
@@ -55,6 +57,7 @@ def load_sensor():
         "homeassistant.const": const,
         "homeassistant.helpers": helpers,
         "homeassistant.helpers.device_registry": device,
+        "homeassistant.helpers.entity_registry": entity_registry,
         "homeassistant.helpers.update_coordinator": update,
     }
     with patch.dict(sys.modules, modules):
@@ -99,13 +102,13 @@ def measurement(profile_id, user_index, weight=70.0):
 
 class ProfileSensorTest(unittest.IsolatedAsyncioTestCase):
     async def test_shared_ids_stay_compatible_and_profiles_are_distinct(self):
-        entry, coordinator = make_entry()
+        entry, _ = make_entry()
         entities = []
         await sensor_module.async_setup_entry(None, entry, entities.extend)
         self.assertEqual(len(entities), 42)
         self.assertEqual(len({entity._attr_unique_id for entity in entities}), 42)
         shared = entities[:14]
-        self.assertEqual(shared[0]._attr_unique_id, f"{coordinator.address}_weight_kg")
+        self.assertEqual(shared[0]._attr_unique_id, "020000000000_weight_kg")
         profile_weight_ids = {
             entities[14]._attr_unique_id,
             entities[28]._attr_unique_id,
@@ -113,8 +116,8 @@ class ProfileSensorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             profile_weight_ids,
             {
-                f"{coordinator.address}_profile-a_weight_kg",
-                f"{coordinator.address}_profile-b_weight_kg",
+                "020000000000_profile-a_weight_kg",
+                "020000000000_profile-b_weight_kg",
             },
         )
 

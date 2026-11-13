@@ -102,6 +102,7 @@ class SelectEntityTest(unittest.IsolatedAsyncioTestCase):
             calls.append(options)
 
         entity = select_module.RenphoUserSelect(entry)
+        self.assertEqual(entity._attr_unique_id, "AABBCCDDEEFF_active_profile")
         entity.hass = SimpleNamespace(
             config_entries=SimpleNamespace(async_update_entry=update_entry)
         )

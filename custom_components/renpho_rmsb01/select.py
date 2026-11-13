@@ -15,6 +15,7 @@ from .const import (
     CONF_SCALE_USER_INDEX,
     DOMAIN,
 )
+from .entity_ids import entity_unique_id
 from .profiles import get_profiles, profile_needs_sync, profile_options, selected_name
 
 
@@ -36,7 +37,7 @@ class RenphoUserSelect(SelectEntity):
 
     def __init__(self, entry) -> None:
         self.entry = entry
-        self._attr_unique_id = f"{entry.data[CONF_ADDRESS]}_active_profile"
+        self._attr_unique_id = entity_unique_id(entry, "active_profile")
         self._attr_device_info = _device_info(entry)
 
     @property
@@ -80,7 +81,7 @@ class RenphoViewSelect(SelectEntity):
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
         self.entry = coordinator.entry
-        self._attr_unique_id = f"{self.entry.data[CONF_ADDRESS]}_viewed_profile"
+        self._attr_unique_id = entity_unique_id(self.entry, "viewed_profile")
         self._attr_device_info = _device_info(self.entry)
 
     @property
@@ -104,16 +105,14 @@ class RenphoViewSelect(SelectEntity):
         from .sensor import CARD_SENSOR_KEYS, SENSORS  # Avoid a platform import cycle.
 
         registry = er.async_get(self.hass)
-        address = self.entry.data[CONF_ADDRESS]
         mapping = {}
         for profile in get_profiles(self.entry):
             entities = {}
             for description in SENSORS:
-                entity_id = registry.async_get_entity_id(
-                    "sensor",
-                    DOMAIN,
-                    f"{address}_{profile[CONF_PROFILE_ID]}_{description.key}",
+                unique_id = entity_unique_id(
+                    self.entry, f"{profile[CONF_PROFILE_ID]}_{description.key}"
                 )
+                entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
                 if entity_id is not None:
                     entities[CARD_SENSOR_KEYS[description.key]] = entity_id
             mapping[profile[CONF_PROFILE_NAME]] = entities
