@@ -46,15 +46,22 @@ Repeated advertisements are suppressed after a successful measurement for 45 sec
 
 Once populated, values remain available while the scale sleeps. After an HA restart, they populate on the next new measurement; Recorder history is unaffected.
 
+## Measurement users
+
+Open **Settings → Devices & services → Renpho R-MSB01 Scale → Configure** to add, edit, delete, and select named HA-side profiles. Each profile has its own age, height, and gender. The selected profile is sent as **visitor 254** with the next measurement; stored scale users are never modified.
+
+The native `select.renpho_r_msb01_user` entity and the card dropdown both select the **next-measurement user**. Changing users preserves the last completed measurement, and the weight entity/card identify the profile that produced it. Existing single-profile installations migrate automatically to **User 1**.
+
 ## Renpho Scale card
 
-Version 0.2.0 includes a dashboard card with a **visual editor**. Open a dashboard, choose **Add card → Renpho Scale**, then:
+The integration includes a dashboard card with a **visual editor**. Open a dashboard, choose **Add card → Renpho Scale**, then:
 
 1. Select the scale's weight sensor.
-2. Open **Values to display** and select exactly which of the 14 measurements you want.
-3. Optionally change the card title and save.
+2. Use **User for next measurement** to choose a profile, or hide the selector in the editor.
+3. Open **Values to display** and select exactly which of the 14 measurements you want.
+4. Optionally change the card title and save.
 
-Select any value tile to open its normal Home Assistant history/more-info dialog. The card resource is copied to `/local/` and registered automatically, including a content hash for reliable updates and restarts.
+Select any value tile to open its normal Home Assistant history/more-info dialog. The card shows **Waiting for scale** when entities exist but no measurement has arrived, and a separate error when entity IDs are missing. The card resource is copied to `/local/` and registered automatically, including a content hash for reliable updates and restarts.
 
 Equivalent YAML:
 
@@ -62,6 +69,7 @@ Equivalent YAML:
 type: custom:renpho-rmsb01-card
 title: Renpho Scale
 entity: sensor.renpho_r_msb01_weight
+show_user_selector: true
 metrics:
   - weight
   - bmi
@@ -73,7 +81,7 @@ metrics:
   - last_measurement
 ```
 
-The sibling entity IDs are derived from the weight sensor's prefix. If you rename individual entities, optional YAML `entities` overrides are available:
+The sibling entity IDs are derived from the weight sensor's prefix. `user_entity` optionally overrides the derived `select.renpho_r_msb01_user`. If you rename individual measurement entities, optional YAML `entities` overrides are available:
 
 ```yaml
 entities:
@@ -83,7 +91,7 @@ entities:
 
 ## Privacy
 
-Measurements stay local between the scale and Home Assistant. The configured profile is sent directly to the scale over BLE. No cloud endpoint is used. This repository contains only integration code and synthetic test fixtures—not captured personal measurements.
+Measurements and named profiles stay local between the scale and Home Assistant. The active profile is sent directly to the scale over BLE. No cloud endpoint is used. This repository contains only integration code and synthetic test fixtures—not captured personal measurements.
 
 ## Troubleshooting
 
@@ -104,7 +112,7 @@ node --check custom_components/renpho_rmsb01/www/renpho-rmsb01-card.js
 node --test tests/card.test.mjs
 ```
 
-The tests cover synthetic live/stored TN decoding, resistance transforms, the complete GATT handshake, profile encoding, advertisement validation, disconnect handling, and card metric selection/entity mapping.
+The tests cover synthetic live/stored TN decoding, resistance transforms, the complete GATT handshake, profile migration and selection, advertisement validation, disconnect handling, frontend resource registration, and card user/metric selection and connection status.
 
 ## Scope
 

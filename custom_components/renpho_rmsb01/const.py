@@ -9,10 +9,14 @@ CONF_AGE = "age"
 CONF_HEIGHT = "height"
 CONF_GENDER = "gender"
 CONF_NAME = "name"
+CONF_PROFILE_NAME = "profile_name"
+CONF_PROFILES = "profiles"
+CONF_ACTIVE_PROFILE = "active_profile"
 
 DEFAULT_AGE = 30
 DEFAULT_HEIGHT = 170
 DEFAULT_GENDER = "male"
+DEFAULT_PROFILE_NAME = "User 1"
 ALGORITHM = 5
 VISITOR_INDEX = 254
 

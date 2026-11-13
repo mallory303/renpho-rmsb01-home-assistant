@@ -13,6 +13,8 @@ class FakeElement {
     this.children = [];
     this.dataset = {};
     this.attributes = {};
+    this.listeners = {};
+    this.classList = { toggle: () => {} };
     this.textContent = "";
   }
 
@@ -28,7 +30,9 @@ class FakeElement {
     this.attributes[name] = value;
   }
 
-  addEventListener() {}
+  addEventListener(type, callback) {
+    this.listeners[type] = callback;
+  }
 }
 
 class FakeShadowRoot {
@@ -152,6 +156,77 @@ test("rendering shows only selected values and preserves unavailable states", ()
   assert.equal(tiles[1].children[1].children[0].textContent, "22.3");
   assert.equal(tiles[2].children[1].children[0].textContent, "—");
   assert.ok(!tiles.some((tile) => tile.dataset.key === "bmi"));
+});
+
+test("user selector derives its entity and calls select_option", async () => {
+  const card = new Card();
+  card.shadowRoot = new FakeShadowRoot();
+  card.setConfig({
+    entity: "sensor.renpho_r_msb01_weight",
+    metrics: ["weight"],
+  });
+  assert.equal(
+    Card.userEntityFor(card._config),
+    "select.renpho_r_msb01_user",
+  );
+  assert.equal(
+    Card.userEntityFor({ ...card._config, user_entity: "select.custom_user" }),
+    "select.custom_user",
+  );
+  const calls = [];
+  card._hass = {
+    states: {
+      "sensor.renpho_r_msb01_weight": {
+        state: "70.00",
+        attributes: { unit_of_measurement: "kg", profile: "User A" },
+      },
+      "select.renpho_r_msb01_user": {
+        state: "User A",
+        attributes: { options: ["User A", "User B"] },
+      },
+    },
+    callService: async (...args) => calls.push(args),
+  };
+  renderCard.call(card);
+  const label = card.shadowRoot.getElementById("user").children[0];
+  const selector = label.children[1];
+  assert.equal(selector.children.length, 2);
+  assert.equal(selector.value, "User A");
+  assert.equal(
+    card.shadowRoot.getElementById("last-profile").textContent,
+    "Last measurement profile: User A",
+  );
+  selector.value = "User B";
+  await selector.listeners.change();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "select");
+  assert.equal(calls[0][1], "select_option");
+  assert.equal(calls[0][2].entity_id, "select.renpho_r_msb01_user");
+  assert.equal(calls[0][2].option, "User B");
+});
+
+test("connection status distinguishes waiting from missing entities", () => {
+  const waiting = new Card();
+  waiting.shadowRoot = new FakeShadowRoot();
+  waiting.setConfig({ entity: "sensor.renpho_r_msb01_weight", metrics: ["weight"] });
+  waiting._hass = {
+    states: {
+      "sensor.renpho_r_msb01_weight": { state: "unavailable", attributes: {} },
+    },
+  };
+  renderCard.call(waiting);
+  const waitingStatus = waiting.shadowRoot.getElementById("status");
+  assert.equal(waitingStatus.hidden, false);
+  assert.match(waitingStatus.textContent, /^Waiting for scale/);
+
+  const missing = new Card();
+  missing.shadowRoot = new FakeShadowRoot();
+  missing.setConfig({ entity: "sensor.missing_weight", metrics: ["weight"] });
+  missing._hass = { states: {} };
+  renderCard.call(missing);
+  const missingStatus = missing.shadowRoot.getElementById("status");
+  assert.equal(missingStatus.hidden, false);
+  assert.match(missingStatus.textContent, /^Scale entities not found/);
 });
 
 test("loading the resource twice does not duplicate definitions or picker entries", () => {

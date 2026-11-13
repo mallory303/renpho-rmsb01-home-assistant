@@ -16,12 +16,11 @@ from .const import (
     CONF_AGE,
     CONF_GENDER,
     CONF_HEIGHT,
-    DEFAULT_AGE,
-    DEFAULT_GENDER,
-    DEFAULT_HEIGHT,
+    CONF_PROFILE_NAME,
     RETRY_COOLDOWN,
     SUCCESS_COOLDOWN,
 )
+from .profiles import active_profile
 from .session import RenphoSession
 from .util import is_rmsb01, uses_resistance_encryption
 
@@ -46,14 +45,6 @@ class RenphoCoordinator(ActiveBluetoothDataUpdateCoordinator):
             connectable=True,
         )
 
-    def _profile(self) -> dict:
-        values = {**self.entry.data, **self.entry.options}
-        return {
-            "age": values.get(CONF_AGE, DEFAULT_AGE),
-            "height": values.get(CONF_HEIGHT, DEFAULT_HEIGHT),
-            "male": values.get(CONF_GENDER, DEFAULT_GENDER) == "male",
-        }
-
     def _needs_poll(self, service_info, last_poll: float | None) -> bool:
         """Suppress duplicate advertisements and immediate retry loops."""
         if self._session is not None or not is_rmsb01(service_info):
@@ -76,13 +67,17 @@ class RenphoCoordinator(ActiveBluetoothDataUpdateCoordinator):
         if ble_device is None:
             raise BleakError("No connectable Bluetooth adapter can reach the scale")
         self._last_attempt = time.monotonic()
+        profile = active_profile(self.entry)
         self._session = RenphoSession(
             ble_device,
-            **self._profile(),
+            age=profile[CONF_AGE],
+            height=profile[CONF_HEIGHT],
+            male=profile[CONF_GENDER] == "male",
             resistance_encrypted=uses_resistance_encryption(service_info),
         )
         try:
             result = await self._session.measure()
+            result["profile"] = profile[CONF_PROFILE_NAME]
             self._last_success = time.monotonic()
             _LOGGER.info(
                 "R-MSB01 measurement: %.2f kg, BMI %.1f, body fat %.1f%%",

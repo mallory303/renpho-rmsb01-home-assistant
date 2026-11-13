@@ -133,6 +133,7 @@ class RenphoSensor(CoordinatorEntity, SensorEntity):
                 "resistance_50_raw": data["metrics"]["resistance_50_raw"],
                 "resistance_500_raw": data["metrics"]["resistance_500_raw"],
                 "user_index": data["metadata"]["user_index"],
+                "profile": data.get("profile"),
             }
         if self.entity_description.key == "measured_at":
             return {

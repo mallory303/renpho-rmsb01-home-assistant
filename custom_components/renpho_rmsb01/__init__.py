@@ -2,7 +2,7 @@
 
 import logging
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
@@ -12,7 +12,7 @@ from .frontend import async_setup_card
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.SELECT]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -30,8 +30,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload when the measurement profile changes."""
+    """Reload the active profile without discarding the last completed measurement."""
+    previous_data = entry.runtime_data.data
     await hass.config_entries.async_reload(entry.entry_id)
+    if previous_data is not None and entry.state is ConfigEntryState.LOADED:
+        entry.runtime_data.async_set_updated_data(previous_data)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -3,10 +3,11 @@
     "step": {
       "user": {
         "title": "Add Renpho R-MSB01",
-        "description": "Enter the scale's Bluetooth address and the profile to use for visitor measurements. The scale may be asleep during setup.",
+        "description": "Enter the scale's Bluetooth address and the initial HA-side profile for visitor measurements. The scale may be asleep during setup.",
         "data": {
-          "name": "Name",
+          "name": "Scale name",
           "address": "Bluetooth address (AA:BB:CC:DD:EE:FF)",
+          "profile_name": "User name",
           "age": "Age",
           "height": "Height (cm)",
           "gender": "Gender (male or female)"
@@ -14,8 +15,9 @@
       },
       "bluetooth_confirm": {
         "title": "Set up {name}",
-        "description": "Scale discovered at {address}. Configure the profile sent as visitor 254. Stored scale users are not modified.",
+        "description": "Scale discovered at {address}. Configure the initial profile sent as visitor 254. Stored scale users are not modified.",
         "data": {
+          "profile_name": "User name",
           "age": "Age",
           "height": "Height (cm)",
           "gender": "Gender (male or female)"
@@ -33,13 +35,62 @@
   "options": {
     "step": {
       "init": {
-        "title": "Measurement profile",
-        "description": "Used for visitor measurements. Changing it does not modify stored users on the scale.",
+        "title": "Measurement users",
+        "description": "Profiles are stored only in Home Assistant and sent as visitor 254. Stored scale users are not modified.",
+        "menu_options": {
+          "active_profile": "Select user for next measurement",
+          "add_profile": "Add user",
+          "edit_profile": "Edit user",
+          "delete_profile": "Delete user"
+        }
+      },
+      "active_profile": {
+        "title": "Select user",
         "data": {
+          "active_profile": "User for next measurement"
+        }
+      },
+      "add_profile": {
+        "title": "Add user",
+        "data": {
+          "profile_name": "User name",
           "age": "Age",
           "height": "Height (cm)",
           "gender": "Gender (male or female)"
         }
+      },
+      "edit_profile": {
+        "title": "Choose user to edit",
+        "data": {
+          "active_profile": "User"
+        }
+      },
+      "edit_details": {
+        "title": "Edit user",
+        "data": {
+          "profile_name": "User name",
+          "age": "Age",
+          "height": "Height (cm)",
+          "gender": "Gender (male or female)"
+        }
+      },
+      "delete_profile": {
+        "title": "Delete user",
+        "data": {
+          "active_profile": "User to delete"
+        }
+      }
+    },
+    "error": {
+      "name_required": "Enter a non-blank user name.",
+      "name_exists": "A user with this name already exists.",
+      "last_profile": "At least one user must remain."
+    }
+  },
+  "entity": {
+    "select": {
+      "active_profile": {
+        "name": "User"
       }
     }
   }
