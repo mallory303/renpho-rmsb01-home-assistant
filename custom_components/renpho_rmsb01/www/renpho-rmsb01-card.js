@@ -43,6 +43,7 @@ class RenphoScaleCard extends HTMLElement {
     this._config = null;
     this._hass = null;
     this._userError = "";
+    this._viewError = "";
   }
 
   static getConfigElement() {
@@ -91,6 +92,22 @@ class RenphoScaleCard extends HTMLElement {
     return `select.${prefix}_user`;
   }
 
+  static viewEntityFor(config) {
+    if (config.view_entity) {
+      return config.view_entity;
+    }
+    const prefix = config.entity.replace(/^sensor\./, "").replace(/_weight$/, "");
+    return `select.${prefix}_viewed_user`;
+  }
+
+  entityForView(key, viewState) {
+    const profileEntities = viewState
+      && viewState.attributes
+      && viewState.attributes.profile_entities;
+    const entities = profileEntities && profileEntities[viewState.state];
+    return (entities && entities[key]) || RenphoScaleCard.entityFor(this._config, key);
+  }
+
   setConfig(config) {
     if (!config || typeof config.entity !== "string" || !config.entity.startsWith("sensor.")) {
       throw new Error("Select the scale's weight sensor entity.");
@@ -102,6 +119,7 @@ class RenphoScaleCard extends HTMLElement {
     this._config = {
       title: "Renpho Scale",
       show_user_selector: true,
+      show_view_selector: true,
       ...config,
       metrics: [...metrics],
     };
@@ -120,7 +138,8 @@ class RenphoScaleCard extends HTMLElement {
     return Math.max(
       2,
       Math.ceil(this._config.metrics.length / 2) + 1
-        + (this._config.show_user_selector === false ? 0 : 1),
+        + (this._config.show_user_selector === false ? 0 : 1)
+        + (this._config.show_view_selector === false ? 0 : 1),
     );
   }
 
@@ -162,7 +181,7 @@ class RenphoScaleCard extends HTMLElement {
     const label = document.createElement("label");
     label.className = "user-label";
     const caption = document.createElement("span");
-    caption.textContent = "User for next measurement";
+    caption.textContent = "Measurement mode (Auto or forced user)";
     const select = document.createElement("select");
     select.className = "user-select";
     select.dataset.entityId = entityId;
@@ -191,12 +210,60 @@ class RenphoScaleCard extends HTMLElement {
     container.replaceChildren(label);
   }
 
-  _renderProfileAndStatus(metricStates) {
+  _renderViewSelector() {
+    const container = this.shadowRoot.getElementById("view");
+    container.replaceChildren();
+    if (!this._hass || this._config.show_view_selector === false) {
+      return;
+    }
+    const entityId = RenphoScaleCard.viewEntityFor(this._config);
+    const stateObj = this._hass.states[entityId];
+    const options = stateObj && stateObj.attributes.options;
+    if (!stateObj || !Array.isArray(options)) {
+      return;
+    }
+    const label = document.createElement("label");
+    label.className = "user-label";
+    const caption = document.createElement("span");
+    caption.textContent = "View measurement history for";
+    const select = document.createElement("select");
+    select.className = "user-select";
+    select.dataset.entityId = entityId;
+    options.forEach((optionName) => {
+      const option = document.createElement("option");
+      option.value = optionName;
+      option.textContent = optionName;
+      select.append(option);
+    });
+    select.value = stateObj.state;
+    select.disabled = ["unknown", "unavailable"].includes(stateObj.state);
+    select.addEventListener("change", async () => {
+      select.disabled = true;
+      try {
+        await this._hass.callService("select", "select_option", {
+          entity_id: entityId,
+          option: select.value,
+        });
+        this._viewError = "";
+      } catch (error) {
+        this._viewError = "Could not change the viewed user. Check the Home Assistant logs.";
+        this._render();
+      }
+    });
+    label.append(caption, select);
+    container.replaceChildren(label);
+  }
+
+  _renderProfileAndStatus(metricStates, viewState) {
     const profileElement = this.shadowRoot.getElementById("last-profile");
     const weightState = this._hass && this._hass.states[this._config.entity];
     const profile = weightState && weightState.attributes.profile;
-    profileElement.textContent = profile ? `Last measurement profile: ${profile}` : "";
-    profileElement.hidden = !profile;
+    const viewing = viewState && viewState.state
+      && !["unknown", "unavailable"].includes(viewState.state);
+    profileElement.textContent = viewing
+      ? `Viewing: ${viewState.state}`
+      : (profile ? `Last measurement profile: ${profile}` : "");
+    profileElement.hidden = !viewing && !profile;
 
     const status = this.shadowRoot.getElementById("status");
     status.textContent = "";
@@ -204,8 +271,12 @@ class RenphoScaleCard extends HTMLElement {
     if (!this._hass || metricStates.length === 0) {
       return;
     }
-    let message = this._userError || "";
-    let isError = Boolean(this._userError);
+    let message = this._userError || this._viewError || "";
+    let isError = Boolean(message);
+    if (!message && weightState && weightState.attributes.identified === false) {
+      const slot = weightState.attributes.user_index;
+      message = `Latest measurement is unassigned (scale slot ${slot}); no person's history was changed.`;
+    }
     if (!message) {
       const present = metricStates.filter((item) => item.stateObj);
       const hasValue = present.some((item) => (
@@ -284,6 +355,7 @@ class RenphoScaleCard extends HTMLElement {
       <ha-card>
         <div class="title" id="title"></div>
         <div id="user"></div>
+        <div id="view"></div>
         <div class="last-profile" id="last-profile"></div>
         <div class="status" id="status"></div>
         <div class="grid" id="grid"></div>
@@ -292,15 +364,19 @@ class RenphoScaleCard extends HTMLElement {
     const title = this.shadowRoot.getElementById("title");
     title.textContent = this._config.title || "";
     title.hidden = !this._config.title;
+    const viewState = this._config.show_view_selector === false || !this._hass
+      ? null
+      : this._hass.states[RenphoScaleCard.viewEntityFor(this._config)];
     const metricStates = this._config.metrics.map((key) => {
-      const entityId = RenphoScaleCard.entityFor(this._config, key);
+      const entityId = this.entityForView(key, viewState);
       return {
         key,
         stateObj: this._hass ? this._hass.states[entityId] : null,
       };
     });
     this._renderUserSelector();
-    this._renderProfileAndStatus(metricStates);
+    this._renderViewSelector();
+    this._renderProfileAndStatus(metricStates, viewState);
     const grid = this.shadowRoot.getElementById("grid");
 
     if (this._config.metrics.length === 0) {
@@ -313,7 +389,7 @@ class RenphoScaleCard extends HTMLElement {
 
     const tiles = metricStates.map(({ key, stateObj }) => {
       const metric = metricByKey(key);
-      const entityId = RenphoScaleCard.entityFor(this._config, key);
+      const entityId = this.entityForView(key, viewState);
       const reading = this._formatState(metric, stateObj);
       const tile = document.createElement("button");
       tile.type = "button";
@@ -376,7 +452,7 @@ class RenphoScaleCardEditor extends HTMLElement {
         .hint { color: var(--secondary-text-color); font-size: 0.9rem; margin: 12px 0 0; }
       </style>
       <ha-form id="form"></ha-form>
-      <p class="hint">Choose the next-measurement user and exactly which values appear. Select a value on the card to open its history.</p>`;
+      <p class="hint">Choose Auto or a forced measurement user, whose per-person values appear, and exactly which metrics are visible. Select a value to open its history.</p>`;
     this._form = this.shadowRoot.getElementById("form");
     this._form.hass = this._hass;
     this._form.schema = [
@@ -384,6 +460,8 @@ class RenphoScaleCardEditor extends HTMLElement {
       { name: "entity", required: true, selector: { entity: { domain: "sensor" } } },
       { name: "user_entity", selector: { entity: { domain: "select" } } },
       { name: "show_user_selector", selector: { boolean: {} } },
+      { name: "view_entity", selector: { entity: { domain: "select" } } },
+      { name: "show_view_selector", selector: { boolean: {} } },
       {
         name: "metrics",
         required: true,
@@ -400,6 +478,8 @@ class RenphoScaleCardEditor extends HTMLElement {
       entity: "Weight sensor",
       user_entity: "User selector entity (optional)",
       show_user_selector: "Show user selector",
+      view_entity: "Viewed-user selector entity (optional)",
+      show_view_selector: "Show viewed-user selector",
       metrics: "Values to display",
     })[schema.name] || schema.name;
     this._form.data = this._formData();
@@ -416,6 +496,8 @@ class RenphoScaleCardEditor extends HTMLElement {
       entity: this._config.entity || "sensor.renpho_r_msb01_weight",
       user_entity: this._config.user_entity || "",
       show_user_selector: this._config.show_user_selector !== false,
+      view_entity: this._config.view_entity || "",
+      show_view_selector: this._config.show_view_selector !== false,
       metrics: this._config.metrics === undefined ? [...DEFAULT_METRICS] : this._config.metrics,
     };
   }

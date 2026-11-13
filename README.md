@@ -23,13 +23,15 @@ Manual installation also works: copy `custom_components/renpho_rmsb01` to `/conf
 
 1. A scale advertisement wakes the integration.
 2. HA validates either the R-MSB01 manufacturer/model data or the verified connectable **Renpho-Scale + FFE0** advertisement, then opens one bounded GATT session.
-3. The integration performs the VA handshake and selects **visitor 254** using the configured profile. Stored scale users are not modified.
-4. A complete TN measurement updates all sensors together, then HA disconnects.
-5. Failed or interrupted sessions retain the previous completed values.
+3. The integration performs the VA handshake. In **Auto** mode it does not select a visitor; the scale uses its native stored-user weight identification and returns a slot number. A named manual profile instead selects **visitor 254**.
+4. A complete TN measurement updates the latest-measurement sensors. Auto measurements assigned to an explicitly enrolled slot also update only that person's sensors.
+5. HA disconnects after completion. Failed or interrupted sessions retain the previous completed values.
 
 Repeated advertisements are suppressed after a successful measurement for 45 seconds. Failed attempts may retry after 5 seconds. Sessions time out after 75 seconds.
 
 ## Sensors
+
+Each measurement provides:
 
 - Weight
 - BMI
@@ -44,24 +46,37 @@ Repeated advertisements are suppressed after a successful measurement for 45 sec
 - Body age
 - Last-measurement timestamp
 
-Once populated, values remain available while the scale sleeps. After an HA restart, they populate on the next new measurement; Recorder history is unaffected.
+The original 14 sensors remain compatible and always represent the **latest completed measurement**, including an unassigned one. Every HA profile also has its own set of 14 sensors and Recorder history. Per-person sensors restore their last values after an HA restart; shared latest-measurement sensors populate on the next measurement after a restart.
 
-## Measurement users
+## Measurement users and enrollment
 
-Open **Settings → Devices & services → Renpho R-MSB01 Scale → Configure** to add, edit, delete, and select named HA-side profiles. Each profile has its own age, height, and gender. The selected profile is sent as **visitor 254** with the next measurement; stored scale users are never modified.
+Open **Settings → Devices & services → Renpho R-MSB01 Scale → Configure** to add, edit, delete, and select named HA profiles. Each profile has its own age, height, and gender.
 
-The native `select.renpho_r_msb01_user` entity and the card dropdown both select the **next-measurement user**. Changing users preserves the last completed measurement, and the weight entity/card identify the profile that produced it. Existing single-profile installations migrate automatically to **User 1**.
+### Automatic family-member identification
+
+1. Create one HA profile for each family member.
+2. Keep the Renpho app and other BLE clients disconnected, and wake the scale beside the HA host.
+3. Choose **Enroll / sync scale profile**, select one person, and confirm. Repeat for each family member.
+4. The enrollment operation reads slots 1–8 first. It then reuses a verified mapping, synchronizes an existing enrolled profile, or asks the scale to allocate a free slot. It never deletes or intentionally overwrites a stored scale user.
+5. After successful enrollment, the measurement selector is set to **Auto**. Family members can then use the scale without interacting with Home Assistant.
+
+Enrollment is the **only** operation that writes a stored user. Adding, renaming, selecting, or deleting an HA profile does not delete or modify a stored scale user. Editing an enrolled person's age, height, or gender marks the profile as needing synchronization; run **Enroll / sync scale profile** again before relying on its body-composition values.
+
+The integration maps only the returned scale slot to an explicitly enrolled HA profile. It does not guess identities from weight. An unassigned or unknown slot updates the shared latest-measurement sensors but **no person's history**, and fires `renpho_rmsb01_unassigned_measurement` with the entry ID and slot number. Native weight identification is performed by the scale, so its handling of similar-weight or ambiguous users remains a hardware limitation.
+
+For manual operation, select a named profile instead of **Auto**. The next measurement uses visitor 254 and updates that HA profile's sensors; stored scale users are not modified. Existing single-profile installations migrate automatically and retain manual behavior until **Auto** is explicitly selected.
 
 ## Renpho Scale card
 
 The integration includes a dashboard card with a **visual editor**. Open a dashboard, choose **Add card → Renpho Scale**, then:
 
-1. Select the scale's weight sensor.
-2. Use **User for next measurement** to choose a profile, or hide the selector in the editor.
-3. Open **Values to display** and select exactly which of the 14 measurements you want.
-4. Optionally change the card title and save.
+1. Select the scale's shared weight sensor.
+2. Use **Measurement mode** to choose **Auto** or a forced visitor profile.
+3. Use **View measurement history for** to choose whose per-person values appear. This selector changes only the dashboard view and does not connect to the scale.
+4. Open **Values to display** and select exactly which of the 14 measurements you want.
+5. Optionally change the card title or hide either selector, then save.
 
-Select any value tile to open its normal Home Assistant history/more-info dialog. The card shows **Waiting for scale** when entities exist but no measurement has arrived, and a separate error when entity IDs are missing. The card resource is copied to `/local/` and registered automatically, including a content hash for reliable updates and restarts.
+Select any value tile to open its normal Home Assistant history/more-info dialog. The card uses the entity registry to resolve each person's actual entity IDs, including renamed entities, and falls back to the shared sensors when no per-person mapping exists. It distinguishes waiting for the scale, missing entities, and unassigned measurements. The card resource is copied to `/local/` and registered automatically, including a content hash for reliable updates and restarts.
 
 Equivalent YAML:
 
@@ -70,6 +85,7 @@ type: custom:renpho-rmsb01-card
 title: Renpho Scale
 entity: sensor.renpho_r_msb01_weight
 show_user_selector: true
+show_view_selector: true
 metrics:
   - weight
   - bmi
@@ -81,7 +97,7 @@ metrics:
   - last_measurement
 ```
 
-The sibling entity IDs are derived from the weight sensor's prefix. `user_entity` optionally overrides the derived `select.renpho_r_msb01_user`. If you rename individual measurement entities, optional YAML `entities` overrides are available:
+The shared sibling entity IDs are derived from the weight sensor's prefix. `user_entity` and `view_entity` optionally override the two derived select entity IDs. Optional YAML `entities` overrides remain available for shared/fallback sensors:
 
 ```yaml
 entities:
@@ -91,14 +107,16 @@ entities:
 
 ## Privacy
 
-Measurements and named profiles stay local between the scale and Home Assistant. The active profile is sent directly to the scale over BLE. No cloud endpoint is used. This repository contains only integration code and synthetic test fixtures—not captured personal measurements.
+Measurements and named profiles stay local between the scale and Home Assistant. In manual mode the selected demographics are sent as visitor data; in Auto mode enrolled demographics and a generated slot key are stored by the scale. No cloud endpoint is used. This repository contains only integration code and synthetic test fixtures—not captured personal measurements or real scale identities.
 
 ## Troubleshooting
 
-- Keep the Renpho app and other BLE clients disconnected during measurement.
-- Wake the scale near the HA host if discovery does not appear.
+- Keep the Renpho app and other BLE clients disconnected during measurement or enrollment.
+- Wake the scale near the HA host if discovery or enrollment does not appear.
 - Check that HA's **Bluetooth** integration is configured and the adapter is powered.
 - Manual setup accepts a Bluetooth address even while the scale is asleep.
+- If enrollment reports a stale slot/key mapping or no free slot, it stops without registering, synchronizing, deleting, or overwriting a user.
+- If Auto reports an unassigned measurement, enroll that user or select a manual profile; the integration will not infer their identity from weight.
 - Enable debug logs for `custom_components.renpho_rmsb01` if sessions do not complete.
 
 ## Development
@@ -112,8 +130,8 @@ node --check custom_components/renpho_rmsb01/www/renpho-rmsb01-card.js
 node --test tests/card.test.mjs
 ```
 
-The tests cover synthetic live/stored TN decoding, resistance transforms, the complete GATT handshake, profile migration and selection, advertisement validation, disconnect handling, frontend resource registration, and card user/metric selection and connection status.
+The tests cover synthetic live/stored TN decoding, resistance transforms, manual and automatic GATT handshakes, stored-user reads, registration/sync rejection paths, explicit slot attribution, unknown-user isolation, enrollment safety, profile migration and selection, advertisement validation, disconnect handling, frontend resource registration, and card measurement/view selection.
 
 ## Scope
 
-Validated specifically for R-MSB01(V6.0) VA/TN. Stored-history synchronization and other Renpho protocol families are not implemented. Body-composition values are produced by the scale firmware using the configured visitor profile. Research tooling only; not medical advice.
+Validated specifically for R-MSB01(V6.0) VA/TN. Stored-history synchronization and other Renpho protocol families are not implemented. Body-composition values are produced by the scale firmware using its identified stored profile or the configured visitor profile. Research tooling only; not medical advice.

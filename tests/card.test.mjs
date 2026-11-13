@@ -229,6 +229,70 @@ test("connection status distinguishes waiting from missing entities", () => {
   assert.match(missingStatus.textContent, /^Scale entities not found/);
 });
 
+test("viewed-user selector switches to per-person entities without changing measurement mode", async () => {
+  const card = new Card();
+  card.shadowRoot = new FakeShadowRoot();
+  card.setConfig({
+    entity: "sensor.renpho_r_msb01_weight",
+    metrics: ["weight", "body_fat"],
+  });
+  const calls = [];
+  card._hass = {
+    states: {
+      "sensor.renpho_r_msb01_weight": {
+        state: "70.00", attributes: { unit_of_measurement: "kg", profile: "User A" },
+      },
+      "sensor.user_a_weight": { state: "70.00", attributes: { unit_of_measurement: "kg" } },
+      "sensor.user_a_body_fat": { state: "22.0", attributes: { unit_of_measurement: "%" } },
+      "sensor.user_b_weight": { state: "80.00", attributes: { unit_of_measurement: "kg" } },
+      "sensor.user_b_body_fat": { state: "30.0", attributes: { unit_of_measurement: "%" } },
+      "select.renpho_r_msb01_user": {
+        state: "Auto", attributes: { options: ["Auto", "User A", "User B"] },
+      },
+      "select.renpho_r_msb01_viewed_user": {
+        state: "User B",
+        attributes: {
+          options: ["User A", "User B"],
+          profile_entities: {
+            "User A": { weight: "sensor.user_a_weight", body_fat: "sensor.user_a_body_fat" },
+            "User B": { weight: "sensor.user_b_weight", body_fat: "sensor.user_b_body_fat" },
+          },
+        },
+      },
+    },
+    callService: async (...args) => calls.push(args),
+  };
+  assert.equal(Card.viewEntityFor(card._config), "select.renpho_r_msb01_viewed_user");
+  renderCard.call(card);
+  const tiles = card.shadowRoot.getElementById("grid").children;
+  assert.equal(tiles[0].children[1].children[0].textContent, "80.00");
+  assert.equal(tiles[1].children[1].children[0].textContent, "30.0");
+  assert.equal(card.shadowRoot.getElementById("last-profile").textContent, "Viewing: User B");
+  const selector = card.shadowRoot.getElementById("view").children[0].children[1];
+  selector.value = "User A";
+  await selector.listeners.change();
+  assert.equal(calls[0][2].entity_id, "select.renpho_r_msb01_viewed_user");
+  assert.equal(calls[0][2].option, "User A");
+});
+
+test("unassigned native measurement does not masquerade as a family member", () => {
+  const card = new Card();
+  card.shadowRoot = new FakeShadowRoot();
+  card.setConfig({ entity: "sensor.renpho_r_msb01_weight", metrics: ["weight"] });
+  card._hass = {
+    states: {
+      "sensor.renpho_r_msb01_weight": {
+        state: "65.0",
+        attributes: { identified: false, user_index: 0, profile: null },
+      },
+    },
+  };
+  renderCard.call(card);
+  const status = card.shadowRoot.getElementById("status");
+  assert.match(status.textContent, /unassigned \(scale slot 0\)/);
+  assert.match(status.textContent, /no person's history was changed/);
+});
+
 test("loading the resource twice does not duplicate definitions or picker entries", () => {
   vm.runInContext(`{\n${source}\n}`, sandbox);
   assert.equal(sandbox.window.customCards.length, 1);

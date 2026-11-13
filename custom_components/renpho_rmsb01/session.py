@@ -39,11 +39,46 @@ def time_sync_packet(device_type: int, now: int) -> bytes:
     return checksum_packet(0x20, (seconds & 0xFFFFFFFF).to_bytes(4, "little"), device_type)
 
 
+def user_packet(
+    age: int,
+    height_cm: int,
+    male: bool,
+    *,
+    action: int,
+    user_index: int,
+    user_key: int,
+) -> bytes:
+    """Build a VA registration/visit packet; callers choose the explicit operation."""
+    if action not in (1, 2):
+        raise ValueError("Only register (1) and visit (2) are supported")
+    if not 0 <= user_index <= 254 or not 0 <= user_key <= 0xFFFF:
+        raise ValueError("Invalid scale user index or key")
+    height = max(40, min(240, int(height_cm))) * 10
+    payload = [
+        user_index,
+        user_key >> 8,
+        user_key & 0xFF,
+        0 if male else 1,
+        int(age),
+        height >> 8,
+        height & 0xFF,
+        ALGORITHM,
+        0,
+    ]
+    # Unlike most VA commands, 0xA0's byte after length is the action.
+    return checksum_packet(0xA0, payload, action)
+
+
 def visitor_packet(age: int, height_cm: int, male: bool) -> bytes:
     """Select visitor 254 without modifying stored scale users."""
-    height = max(40, min(240, int(height_cm))) * 10
-    payload = [254, 255, 238, 0 if male else 1, int(age), height >> 8, height & 0xFF, ALGORITHM, 0]
-    return checksum_packet(0xA0, payload, 2)
+    return user_packet(
+        age,
+        height_cm,
+        male,
+        action=2,
+        user_index=254,
+        user_key=0xFFEE,
+    )
 
 
 class RenphoSession:
@@ -57,11 +92,13 @@ class RenphoSession:
         height: int,
         male: bool,
         resistance_encrypted: bool = False,
+        auto: bool = False,
     ) -> None:
         self._ble_device = ble_device
         self._age = age
         self._height = height
         self._male = male
+        self._auto = auto
         self._resistance_encrypted = resistance_encrypted
         self._client = None
         self._disconnected = asyncio.Event()
@@ -177,6 +214,7 @@ class RenphoSession:
                     "weight_ratio": self._weight_ratio,
                     "support_heart": self._support_heart,
                     "stored_user_info": bool(data[17] & 0x80),
+                    "identify_weight": bool(data[16] & 0x20),
                 }
                 self._schedule_send(scale_config_packet(self._device_type))
             elif command == 0x14 and not self._time_sent:
@@ -193,8 +231,9 @@ class RenphoSession:
                     self._fail("Scale rejected time synchronization")
                     return
                 self._visitor_sent = True
-                self._schedule_send(visitor_packet(self._age, self._height, self._male))
-            elif command == 0xA1:
+                if not self._auto:
+                    self._schedule_send(visitor_packet(self._age, self._height, self._male))
+            elif command == 0xA1 and not self._auto:
                 if len(data) <= 4 or data[2:5] != bytes([2, 254, 1]):
                     self._fail("Scale rejected the synthetic visitor")
                     return
@@ -220,6 +259,7 @@ class RenphoSession:
             "masked_out": decoded["decoded_but_masked_out"],
             "raw_packets": {f"0x{code:02x}": packet.hex() for code, packet in zip((0x10, 0x15, 0x16), packets)},
             "capabilities": self._capabilities,
+            "automatic": self._auto,
             "measured_at": datetime.now(UTC).isoformat(),
         }
         assert self._device_type is not None

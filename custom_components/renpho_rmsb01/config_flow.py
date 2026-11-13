@@ -1,21 +1,29 @@
-"""Config and profile-management flows for Renpho R-MSB01."""
+"""Config flow, HA profiles, and explicit scale-user enrollment."""
 
+import logging
 import re
 from typing import Any
+from uuid import uuid4
 
 import voluptuous as vol
+from bleak import BleakError
 from homeassistant import config_entries
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.core import callback
 
 from .const import (
+    AUTO_PROFILE,
     CONF_ACTIVE_PROFILE,
     CONF_ADDRESS,
     CONF_AGE,
     CONF_GENDER,
     CONF_HEIGHT,
     CONF_NAME,
+    CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
+    CONF_SCALE_PROFILE,
+    CONF_SCALE_USER_INDEX,
+    CONF_SCALE_USER_KEY,
     DEFAULT_AGE,
     DEFAULT_GENDER,
     DEFAULT_HEIGHT,
@@ -23,10 +31,11 @@ from .const import (
     DEFAULT_PROFILE_NAME,
     DOMAIN,
 )
-from .profiles import active_profile, get_profiles, profile_options
+from .profiles import get_profiles, profile_options, selected_name
 from .util import is_rmsb01, normalized_address
 
 ADDRESS_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
+_LOGGER = logging.getLogger(__name__)
 
 
 def _profile_schema(values: dict[str, Any] | None = None) -> vol.Schema:
@@ -45,14 +54,24 @@ def _profile_schema(values: dict[str, Any] | None = None) -> vol.Schema:
     })
 
 
-def _clean_profile(user_input: dict[str, Any]) -> dict[str, Any]:
-    """Return only normalized profile fields, never scale-registration commands."""
-    return {
+def _clean_profile(
+    user_input: dict[str, Any], original: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Normalize demographics and preserve stable identity/enrollment metadata."""
+    profile = {
         CONF_PROFILE_NAME: user_input[CONF_PROFILE_NAME].strip(),
         CONF_AGE: user_input[CONF_AGE],
         CONF_HEIGHT: user_input[CONF_HEIGHT],
         CONF_GENDER: user_input[CONF_GENDER],
+        CONF_PROFILE_ID: (
+            original.get(CONF_PROFILE_ID) if original is not None else uuid4().hex[:12]
+        ),
     }
+    if original is not None:
+        for key in (CONF_SCALE_USER_INDEX, CONF_SCALE_USER_KEY, CONF_SCALE_PROFILE):
+            if key in original:
+                profile[key] = dict(original[key]) if key == CONF_SCALE_PROFILE else original[key]
+    return profile
 
 
 class RenphoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -117,7 +136,7 @@ class RenphoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class RenphoOptionsFlow(config_entries.OptionsFlow):
-    """Manage HA-side profiles without modifying the scale's user registry."""
+    """Manage HA profiles; only the explicit enrollment step writes the scale."""
 
     def __init__(self) -> None:
         self._editing_name: str | None = None
@@ -126,36 +145,52 @@ class RenphoOptionsFlow(config_entries.OptionsFlow):
         return get_profiles(self.config_entry)
 
     def _active_name(self) -> str:
-        return active_profile(self.config_entry)[CONF_PROFILE_NAME]
+        return selected_name(self.config_entry)
 
     def _save(self, profiles: list[dict[str, Any]], selected: str):
         return self.async_create_entry(title="", data=profile_options(profiles, selected))
 
-    def _profile_picker(self, step_id: str, errors=None):
+    def _profile_picker(self, step_id: str, errors=None, placeholders=None):
         names = [profile[CONF_PROFILE_NAME] for profile in self._profiles()]
+        selected = self._active_name()
+        default = selected if selected in names else names[0]
         return self.async_show_form(
             step_id=step_id,
             data_schema=vol.Schema({
-                vol.Required(CONF_ACTIVE_PROFILE, default=self._active_name()): vol.In(names),
+                vol.Required(CONF_ACTIVE_PROFILE, default=default): vol.In(names),
             }),
             errors=errors or {},
+            description_placeholders=placeholders or {},
         )
 
     async def async_step_init(self, user_input=None):
-        """Show profile-management actions."""
+        """Show profile-management and explicit scale-enrollment actions."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["active_profile", "add_profile", "edit_profile", "delete_profile"],
+            menu_options=[
+                "active_profile",
+                "add_profile",
+                "edit_profile",
+                "enroll_profile",
+                "delete_profile",
+            ],
         )
 
     async def async_step_active_profile(self, user_input=None):
-        """Select the profile for the next measurement."""
+        """Select native Auto identification or one forced visitor profile."""
         if user_input is not None:
             return self._save(self._profiles(), user_input[CONF_ACTIVE_PROFILE])
-        return self._profile_picker("active_profile")
+        names = [profile[CONF_PROFILE_NAME] for profile in self._profiles()]
+        return self.async_show_form(
+            step_id="active_profile",
+            data_schema=vol.Schema({
+                vol.Required(CONF_ACTIVE_PROFILE, default=self._active_name()):
+                    vol.In([AUTO_PROFILE, *names]),
+            }),
+        )
 
     async def async_step_add_profile(self, user_input=None):
-        """Add and activate a new HA-side profile."""
+        """Add and activate a new HA-side profile without writing the scale."""
         errors = {}
         if user_input is not None:
             profile = _clean_profile(user_input)
@@ -164,6 +199,8 @@ class RenphoOptionsFlow(config_entries.OptionsFlow):
             existing = {p[CONF_PROFILE_NAME].casefold() for p in profiles}
             if not name:
                 errors[CONF_PROFILE_NAME] = "name_required"
+            elif name.casefold() == AUTO_PROFILE.casefold():
+                errors[CONF_PROFILE_NAME] = "reserved_name"
             elif name.casefold() in existing:
                 errors[CONF_PROFILE_NAME] = "name_exists"
             else:
@@ -181,7 +218,7 @@ class RenphoOptionsFlow(config_entries.OptionsFlow):
         return self._profile_picker("edit_profile")
 
     async def async_step_edit_details(self, user_input=None):
-        """Edit one profile and preserve the active selection."""
+        """Edit a profile while preserving its identity and scale mapping."""
         profiles = self._profiles()
         original = next(
             profile for profile in profiles
@@ -189,7 +226,7 @@ class RenphoOptionsFlow(config_entries.OptionsFlow):
         )
         errors = {}
         if user_input is not None:
-            replacement = _clean_profile(user_input)
+            replacement = _clean_profile(user_input, original)
             new_name = replacement[CONF_PROFILE_NAME]
             duplicates = {
                 profile[CONF_PROFILE_NAME].casefold()
@@ -197,6 +234,8 @@ class RenphoOptionsFlow(config_entries.OptionsFlow):
             }
             if not new_name:
                 errors[CONF_PROFILE_NAME] = "name_required"
+            elif new_name.casefold() == AUTO_PROFILE.casefold():
+                errors[CONF_PROFILE_NAME] = "reserved_name"
             elif new_name.casefold() in duplicates:
                 errors[CONF_PROFILE_NAME] = "name_exists"
             else:
@@ -209,8 +248,32 @@ class RenphoOptionsFlow(config_entries.OptionsFlow):
             step_id="edit_details", data_schema=_profile_schema(original), errors=errors
         )
 
+    async def async_step_enroll_profile(self, user_input=None):
+        """Read slots first, then explicitly register or sync the chosen profile."""
+        errors = {}
+        if user_input is not None:
+            name = user_input[CONF_ACTIVE_PROFILE]
+            profiles = self._profiles()
+            profile = next(p for p in profiles if p[CONF_PROFILE_NAME] == name)
+            try:
+                mapping = await self.config_entry.runtime_data.async_register_profile(profile)
+            except (BleakError, TimeoutError) as exc:
+                _LOGGER.debug("R-MSB01 profile enrollment failed", exc_info=True)
+                errors["base"] = "enroll_failed"
+                return self._profile_picker(
+                    "enroll_profile", errors, {"error": str(exc)}
+                )
+            profile.update(mapping)
+            profile[CONF_SCALE_PROFILE] = {
+                CONF_AGE: profile[CONF_AGE],
+                CONF_HEIGHT: profile[CONF_HEIGHT],
+                CONF_GENDER: profile[CONF_GENDER],
+            }
+            return self._save(profiles, AUTO_PROFILE)
+        return self._profile_picker("enroll_profile")
+
     async def async_step_delete_profile(self, user_input=None):
-        """Delete a profile while always retaining at least one."""
+        """Delete only the HA profile; never delete or overwrite a scale user."""
         profiles = self._profiles()
         errors = {}
         if user_input is not None:

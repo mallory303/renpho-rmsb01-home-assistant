@@ -30,11 +30,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the active profile without discarding the last completed measurement."""
+    """Reload profile options while retaining the latest in-memory measurements."""
     previous_data = entry.runtime_data.data
+    previous_profiles = dict(entry.runtime_data.profile_measurements)
+    previous_view = entry.runtime_data.viewed_profile_id
     await hass.config_entries.async_reload(entry.entry_id)
-    if previous_data is not None and entry.state is ConfigEntryState.LOADED:
-        entry.runtime_data.async_set_updated_data(previous_data)
+    if entry.state is ConfigEntryState.LOADED:
+        entry.runtime_data.profile_measurements = previous_profiles
+        entry.runtime_data.viewed_profile_id = previous_view
+        if previous_data is not None:
+            entry.runtime_data.async_set_updated_data(previous_data)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

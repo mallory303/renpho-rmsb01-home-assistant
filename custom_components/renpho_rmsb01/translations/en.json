@@ -15,7 +15,7 @@
       },
       "bluetooth_confirm": {
         "title": "Set up {name}",
-        "description": "Scale discovered at {address}. Configure the initial profile sent as visitor 254. Stored scale users are not modified.",
+        "description": "Scale discovered at {address}. Configure the initial profile sent as visitor 254. Stored scale users are not modified during initial setup.",
         "data": {
           "profile_name": "User name",
           "age": "Age",
@@ -36,18 +36,20 @@
     "step": {
       "init": {
         "title": "Measurement users",
-        "description": "Profiles are stored only in Home Assistant and sent as visitor 254. Stored scale users are not modified.",
+        "description": "Auto uses enrolled scale users 1-8. Choosing a person forces visitor 254. Adding, editing, or deleting HA profiles does not change the scale; only Enroll / sync writes a profile.",
         "menu_options": {
-          "active_profile": "Select user for next measurement",
+          "active_profile": "Auto or manual measurement user",
           "add_profile": "Add user",
           "edit_profile": "Edit user",
+          "enroll_profile": "Enroll / sync user with scale",
           "delete_profile": "Delete user"
         }
       },
       "active_profile": {
-        "title": "Select user",
+        "title": "Select measurement mode",
+        "description": "Auto lets the scale identify an enrolled user. A named profile forces visitor mode with that profile's demographics.",
         "data": {
-          "active_profile": "User for next measurement"
+          "active_profile": "Measurement mode"
         }
       },
       "add_profile": {
@@ -67,6 +69,7 @@
       },
       "edit_details": {
         "title": "Edit user",
+        "description": "Identity and scale-slot mapping are preserved. After changing age, height, or gender, use Enroll / sync before relying on Auto measurements.",
         "data": {
           "profile_name": "User name",
           "age": "Age",
@@ -74,8 +77,16 @@
           "gender": "Gender (male or female)"
         }
       },
+      "enroll_profile": {
+        "title": "Enroll or sync a scale user",
+        "description": "Wake the scale but do not step on it. The integration first reads slots 1-8, then reuses/syncs an exact mapping or asks the scale for a free slot. It never deletes or overwrites a stored user. {error}",
+        "data": {
+          "active_profile": "User to enroll or sync"
+        }
+      },
       "delete_profile": {
-        "title": "Delete user",
+        "title": "Delete HA user",
+        "description": "This removes the HA profile only. It never deletes or overwrites a stored scale user.",
         "data": {
           "active_profile": "User to delete"
         }
@@ -84,6 +95,8 @@
     "error": {
       "name_required": "Enter a non-blank user name.",
       "name_exists": "A user with this name already exists.",
+      "reserved_name": "Auto is reserved for automatic identification.",
+      "enroll_failed": "Enrollment/sync failed; no fallback write was attempted. Wake the scale and retry, or check the log. {error}",
       "last_profile": "At least one user must remain."
     }
   },
@@ -91,6 +104,9 @@
     "select": {
       "active_profile": {
         "name": "User"
+      },
+      "viewed_profile": {
+        "name": "Viewed user"
       }
     }
   }

@@ -12,6 +12,11 @@ CONF_NAME = "name"
 CONF_PROFILE_NAME = "profile_name"
 CONF_PROFILES = "profiles"
 CONF_ACTIVE_PROFILE = "active_profile"
+CONF_PROFILE_ID = "profile_id"
+CONF_SCALE_USER_INDEX = "scale_user_index"
+CONF_SCALE_USER_KEY = "scale_user_key"
+CONF_SCALE_PROFILE = "scale_profile"
+AUTO_PROFILE = "Auto"
 
 DEFAULT_AGE = 30
 DEFAULT_HEIGHT = 170

@@ -85,13 +85,14 @@ TRIPLET = synthetic_triplet()
 class FakeClient:
     """Small GATT peer that enforces the scale's request/response sequence."""
 
-    def __init__(self, disconnected_callback, complete: bool) -> None:
+    def __init__(self, disconnected_callback, complete: bool, auto: bool = False) -> None:
         self.address = "02:00:00:00:00:00"
         self.is_connected = True
         self.writes: list[bytes] = []
         self.callbacks = {}
         self._disconnected_callback = disconnected_callback
         self._complete = complete
+        self._auto = auto
 
     async def start_notify(self, uuid, callback) -> None:
         self.callbacks[uuid] = callback
@@ -115,6 +116,12 @@ class FakeClient:
         elif command == 0x20:
             assert packet[:3] == bytes.fromhex("2008ff")
             self._emit(TIME_REPLY)
+            if self._auto and self._complete:
+                first = bytearray(TRIPLET[0])
+                first[3] = 3  # Native scale-side identification, not visitor 254.
+                self._emit(finish(first))
+                for reply in TRIPLET[1:]:
+                    self._emit(reply)
         elif command == 0xA0:
             self._emit(VISITOR_REPLY)
             if self._complete:
@@ -130,16 +137,16 @@ class FakeClient:
 
 
 class RenphoSessionTest(unittest.IsolatedAsyncioTestCase):
-    async def _measure(self, complete: bool):
+    async def _measure(self, complete: bool, auto: bool = False):
         client: FakeClient | None = None
 
         async def fake_establish(_class, _device, _name, **kwargs):
             nonlocal client
-            client = FakeClient(kwargs["disconnected_callback"], complete)
+            client = FakeClient(kwargs["disconnected_callback"], complete, auto)
             return client
 
         session = RenphoSession(
-            object(), age=45, height=165, male=False, resistance_encrypted=True
+            object(), age=45, height=165, male=False, resistance_encrypted=True, auto=auto
         )
         with patch.object(session_module, "establish_connection", fake_establish):
             result = await asyncio.wait_for(session.measure(), timeout=2)
@@ -178,6 +185,15 @@ class RenphoSessionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.writes[0], bytes.fromhex("1309ff01100000002c"))
         self.assertEqual(client.writes[1][0], 0x20)
         self.assertEqual(client.writes[2], bytes.fromhex("a00d02feffee012d0672050045"))
+        self.assertEqual(client.writes[-1], bytes.fromhex("1f05ff1033"))
+        self.assertFalse(client.is_connected)
+
+    async def test_auto_sends_no_visitor_and_decodes_identified_slot(self) -> None:
+        result, client = await self._measure(complete=True, auto=True)
+        self.assertTrue(result["automatic"])
+        self.assertEqual(result["metadata"]["user_index"], 3)
+        self.assertTrue(result["capabilities"]["identify_weight"])
+        self.assertFalse(any(packet[0] == 0xA0 for packet in client.writes))
         self.assertEqual(client.writes[-1], bytes.fromhex("1f05ff1033"))
         self.assertFalse(client.is_connected)
 

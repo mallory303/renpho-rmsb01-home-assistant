@@ -12,7 +12,7 @@
   "integration_type": "device",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/mallory303/renpho-rmsb01-home-assistant/issues",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "bluetooth": [
     {
       "local_name": "Renpho-Scale",
