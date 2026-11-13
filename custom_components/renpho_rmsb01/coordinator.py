@@ -41,7 +41,7 @@ class RenphoCoordinator(ActiveBluetoothDataUpdateCoordinator):
             address=entry.data[CONF_ADDRESS].upper(),
             mode=bluetooth.BluetoothScanningMode.ACTIVE,
             needs_poll_method=self._needs_poll,
-            poll_method=self._async_poll,
+            poll_method=self._async_measure,
             connectable=True,
         )
 
@@ -56,8 +56,8 @@ class RenphoCoordinator(ActiveBluetoothDataUpdateCoordinator):
             return False
         return last_poll is None or last_poll >= RETRY_COOLDOWN
 
-    async def _async_poll(self, service_info) -> dict:
-        """Run one real VA/TN session without discarding prior data on failure."""
+    async def _async_measure(self, service_info) -> dict:
+        """Run one session; never override the base class's no-argument _async_poll."""
         if service_info.connectable:
             ble_device = service_info.device
         else:
