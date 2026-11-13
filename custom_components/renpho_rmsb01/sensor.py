@@ -148,6 +148,15 @@ class RenphoSensor(CoordinatorEntity, SensorEntity):
         self._attr_device_info = _device_info(coordinator.entry)
 
     @property
+    def available(self) -> bool:
+        """Keep completed values visible without depending on poll success state."""
+        if self.coordinator.data is None:
+            return False
+        if self.entity_description.key == "measured_at":
+            return True
+        return self.entity_description.key in self.coordinator.data["metrics"]
+
+    @property
     def native_value(self):
         if self.coordinator.data is None:
             return None

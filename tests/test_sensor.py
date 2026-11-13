@@ -46,6 +46,10 @@ def load_sensor():
         def __init__(self, coordinator):
             self.coordinator = coordinator
 
+        @property
+        def available(self):
+            return self.coordinator.last_update_success
+
         async def async_added_to_hass(self):
             return None
 
@@ -101,6 +105,14 @@ def measurement(profile_id, user_index, weight=70.0):
 
 
 class ProfileSensorTest(unittest.IsolatedAsyncioTestCase):
+    async def test_shared_sensor_availability_does_not_require_coordinator_success_flag(self):
+        _, coordinator = make_entry()
+        entity = sensor_module.RenphoSensor(coordinator, sensor_module.SENSORS[0])
+        self.assertFalse(entity.available)
+        coordinator.data = measurement("profile-a", 254, 70.5)
+        self.assertTrue(entity.available)
+        self.assertEqual(entity.native_value, 70.5)
+
     async def test_shared_ids_stay_compatible_and_profiles_are_distinct(self):
         entry, _ = make_entry()
         entities = []
