@@ -75,7 +75,9 @@ def make_entry():
     coordinator = SimpleNamespace(
         address="02:00:00:00:00:00",
         data=None,
+        previous_data=None,
         profile_measurements={},
+        previous_profile_measurements={},
     )
     profiles = [
         {"profile_name": "User A", "profile_id": "profile-a", "age": 30, "height": 170, "gender": "male", "scale_user_index": 2},
@@ -172,6 +174,60 @@ class ProfileSensorTest(unittest.IsolatedAsyncioTestCase):
         coordinator.profile_measurements["profile-a"] = measurement("profile-a", 2, 72.0)
         self.assertEqual(entity.native_value, 72.0)
         self.assertEqual(entity.extra_state_attributes["user_index"], 2)
+        self.assertEqual(entity.extra_state_attributes["previous_value"], 68.5)
+        self.assertEqual(
+            entity.extra_state_attributes["previous_measured_at"],
+            "2025-12-31T00:00:00+00:00",
+        )
+
+    async def test_shared_and_profile_sensors_expose_their_own_previous_value(self):
+        entry, coordinator = make_entry()
+        previous = measurement("profile-a", 2, 71.0)
+        current = measurement("profile-a", 2, 69.5)
+        current["measured_at"] = "2026-01-02T00:00:00+00:00"
+        coordinator.previous_data = previous
+        coordinator.data = current
+        coordinator.previous_profile_measurements["profile-a"] = previous
+        coordinator.profile_measurements["profile-a"] = current
+
+        shared = sensor_module.RenphoSensor(coordinator, sensor_module.SENSORS[0])
+        person = sensor_module.RenphoProfileSensor(
+            coordinator, entry.options["profiles"][0], sensor_module.SENSORS[0]
+        )
+        for entity in (shared, person):
+            attributes = entity.extra_state_attributes
+            self.assertEqual(attributes["previous_value"], 71.0)
+            self.assertEqual(attributes["previous_measured_at"], previous["measured_at"])
+
+    async def test_first_live_value_after_restart_compares_with_restored_current(self):
+        entry, coordinator = make_entry()
+        entity = sensor_module.RenphoProfileSensor(
+            coordinator, entry.options["profiles"][0], sensor_module.SENSORS[0]
+        )
+
+        async def restored_value():
+            return SimpleNamespace(native_value=68.5)
+
+        async def restored_state():
+            return SimpleNamespace(attributes={
+                "profile": "User A", "profile_id": "profile-a", "identified": True,
+                "user_index": 2, "measured_at": "2025-12-31T00:00:00+00:00",
+                "previous_value": 69.0,
+                "previous_measured_at": "2025-12-30T00:00:00+00:00",
+            })
+
+        entity.async_get_last_sensor_data = restored_value
+        entity.async_get_last_state = restored_state
+        await entity.async_added_to_hass()
+        self.assertEqual(entity.extra_state_attributes["previous_value"], 69.0)
+
+        coordinator.profile_measurements["profile-a"] = measurement("profile-a", 2, 68.0)
+        self.assertEqual(entity.native_value, 68.0)
+        attributes = entity.extra_state_attributes
+        self.assertEqual(attributes["previous_value"], 68.5)
+        self.assertEqual(
+            attributes["previous_measured_at"], "2025-12-31T00:00:00+00:00"
+        )
 
 
 if __name__ == "__main__":

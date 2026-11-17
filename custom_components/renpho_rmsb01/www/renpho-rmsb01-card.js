@@ -1,18 +1,18 @@
 const METRICS = [
-  { key: "weight", label: "Weight", suffix: "weight" },
-  { key: "bmi", label: "BMI", suffix: "bmi" },
-  { key: "body_fat", label: "Body fat", suffix: "body_fat" },
-  { key: "subcutaneous_fat", label: "Subcutaneous fat", suffix: "subcutaneous_fat" },
-  { key: "visceral_fat", label: "Visceral fat", suffix: "visceral_fat" },
-  { key: "body_water", label: "Body water", suffix: "body_water" },
-  { key: "muscle_percentage", label: "Muscle percentage", suffix: "muscle_percentage" },
-  { key: "bone_mass", label: "Bone mass", suffix: "bone_mass" },
-  { key: "basal_metabolic_rate", label: "Basal metabolic rate", suffix: "basal_metabolic_rate" },
-  { key: "protein", label: "Protein", suffix: "protein" },
-  { key: "lean_body_mass", label: "Lean body mass", suffix: "lean_body_mass" },
-  { key: "muscle_mass", label: "Muscle mass", suffix: "muscle_mass" },
-  { key: "body_age", label: "Body age", suffix: "body_age" },
-  { key: "last_measurement", label: "Last measurement", suffix: "last_measurement" },
+  { key: "weight", label: "Weight", suffix: "weight", improvement: "down" },
+  { key: "bmi", label: "BMI", suffix: "bmi", improvement: "down" },
+  { key: "body_fat", label: "Body fat", suffix: "body_fat", improvement: "down" },
+  { key: "subcutaneous_fat", label: "Subcutaneous fat", suffix: "subcutaneous_fat", improvement: "down" },
+  { key: "visceral_fat", label: "Visceral fat", suffix: "visceral_fat", improvement: "down" },
+  { key: "body_water", label: "Body water", suffix: "body_water", improvement: "up" },
+  { key: "muscle_percentage", label: "Muscle percentage", suffix: "muscle_percentage", improvement: "up" },
+  { key: "bone_mass", label: "Bone mass", suffix: "bone_mass", improvement: "up" },
+  { key: "basal_metabolic_rate", label: "Basal metabolic rate", suffix: "basal_metabolic_rate", improvement: "up" },
+  { key: "protein", label: "Protein", suffix: "protein", improvement: "up" },
+  { key: "lean_body_mass", label: "Lean body mass", suffix: "lean_body_mass", improvement: "up" },
+  { key: "muscle_mass", label: "Muscle mass", suffix: "muscle_mass", improvement: "up" },
+  { key: "body_age", label: "Body age", suffix: "body_age", improvement: "down" },
+  { key: "last_measurement", label: "Last measurement", suffix: "last_measurement", improvement: null },
 ];
 
 const DEFAULT_METRICS = [
@@ -116,12 +116,22 @@ class RenphoScaleCard extends HTMLElement {
     if (!Array.isArray(metrics) || metrics.some((key) => !metricByKey(key))) {
       throw new Error("The metrics list contains an unknown value.");
     }
+    const trendDirections = config.trend_directions === undefined ? {} : config.trend_directions;
+    if (!trendDirections || typeof trendDirections !== "object" || Array.isArray(trendDirections)) {
+      throw new Error("Trend directions must be a metric-to-direction mapping.");
+    }
+    Object.entries(trendDirections).forEach(([key, direction]) => {
+      if (!metricByKey(key) || !["up", "down"].includes(direction)) {
+        throw new Error("Each trend direction must use a known metric and up or down.");
+      }
+    });
     this._config = {
       title: "Renpho Scale",
       show_user_selector: true,
       show_view_selector: true,
       ...config,
       metrics: [...metrics],
+      trend_directions: { ...trendDirections },
     };
     this._render();
   }
@@ -164,6 +174,43 @@ class RenphoScaleCard extends HTMLElement {
       value: stateObj.state,
       unit: stateObj.attributes.unit_of_measurement || "",
     };
+  }
+
+  _trend(metric, stateObj) {
+    if (!stateObj || !metric.improvement) {
+      return null;
+    }
+    const attributes = stateObj.attributes || {};
+    const previousValue = attributes.previous_value;
+    if (previousValue === undefined || previousValue === null || previousValue === "") {
+      return null;
+    }
+    const current = Number(stateObj.state);
+    const previous = Number(previousValue);
+    if (!Number.isFinite(current) || !Number.isFinite(previous)) {
+      return null;
+    }
+    const unit = attributes.unit_of_measurement || "";
+    const previousText = `${previousValue} ${unit}`.trim();
+    const difference = current - previous;
+    let symbol = "→";
+    let className = "neutral";
+    let label = `No change from ${previousText}`;
+    if (difference !== 0) {
+      const direction = this._config.trend_directions[metric.key] || metric.improvement;
+      const increased = difference > 0;
+      const improved = increased === (direction === "up");
+      symbol = increased ? "▲" : "▼";
+      className = improved ? "good" : "bad";
+      label = `${improved ? "Good" : "Bad"} progress: ${increased ? "up" : "down"} from ${previousText}`;
+    }
+    if (attributes.previous_measured_at) {
+      const previousDate = new Date(attributes.previous_measured_at);
+      if (!Number.isNaN(previousDate.getTime())) {
+        label += ` on ${previousDate.toLocaleString()}`;
+      }
+    }
+    return { symbol, className, label };
   }
 
   _renderUserSelector() {
@@ -350,6 +397,10 @@ class RenphoScaleCard extends HTMLElement {
         .reading { align-items: baseline; display: flex; flex-wrap: wrap; gap: 5px; }
         .value { font-size: 1.35rem; font-weight: 500; overflow-wrap: anywhere; }
         .unit { color: var(--secondary-text-color); font-size: 0.9rem; }
+        .trend { font-size: 0.85rem; font-weight: 700; line-height: 1; }
+        .trend.good { color: var(--success-color, #2e7d32); }
+        .trend.bad { color: var(--error-color, #c62828); }
+        .trend.neutral { color: var(--secondary-text-color); }
         .empty { color: var(--secondary-text-color); padding: 12px 0; }
       </style>
       <ha-card>
@@ -391,11 +442,15 @@ class RenphoScaleCard extends HTMLElement {
       const metric = metricByKey(key);
       const entityId = this.entityForView(key, viewState);
       const reading = this._formatState(metric, stateObj);
+      const trend = this._trend(metric, stateObj);
       const tile = document.createElement("button");
       tile.type = "button";
       tile.className = "metric";
       tile.dataset.key = key;
-      tile.setAttribute("aria-label", `${metric.label}: ${reading.value} ${reading.unit}`.trim());
+      tile.setAttribute(
+        "aria-label",
+        `${metric.label}: ${reading.value} ${reading.unit}${trend ? `, ${trend.label}` : ""}`.trim(),
+      );
 
       const label = document.createElement("span");
       label.className = "label";
@@ -409,6 +464,14 @@ class RenphoScaleCard extends HTMLElement {
       unit.className = "unit";
       unit.textContent = reading.unit;
       readingRow.append(value, unit);
+      if (trend) {
+        const arrow = document.createElement("span");
+        arrow.className = `trend ${trend.className}`;
+        arrow.textContent = trend.symbol;
+        arrow.title = trend.label;
+        arrow.setAttribute("aria-hidden", "true");
+        readingRow.append(arrow);
+      }
       tile.append(label, readingRow);
       tile.addEventListener("click", () => fireEvent(this, "hass-more-info", { entityId }));
       return tile;

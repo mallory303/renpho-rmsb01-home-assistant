@@ -136,6 +136,22 @@ def _measurement_attributes(data: dict[str, Any], detailed: bool) -> dict[str, A
     return attributes
 
 
+def _with_previous_value(
+    attributes: dict[str, Any], previous: dict[str, Any] | None, key: str
+) -> dict[str, Any]:
+    """Add the preceding completed value without mixing profiles or sessions."""
+    if previous is None:
+        return attributes
+    if key == "measured_at":
+        previous_value = previous["measured_at"]
+    else:
+        previous_value = previous["metrics"].get(key)
+    if previous_value is not None:
+        attributes["previous_value"] = previous_value
+        attributes["previous_measured_at"] = previous["measured_at"]
+    return attributes
+
+
 class RenphoSensor(CoordinatorEntity, SensorEntity):
     """Backward-compatible latest-measurement sensor, including unassigned users."""
 
@@ -167,8 +183,12 @@ class RenphoSensor(CoordinatorEntity, SensorEntity):
         if self.coordinator.data is None:
             return None
         data = self.coordinator.data
-        return _measurement_attributes(
-            data, self.entity_description.key in ("weight_kg", "measured_at")
+        return _with_previous_value(
+            _measurement_attributes(
+                data, self.entity_description.key in ("weight_kg", "measured_at")
+            ),
+            self.coordinator.previous_data,
+            self.entity_description.key,
         )
 
 
@@ -207,7 +227,10 @@ class RenphoProfileSensor(CoordinatorEntity, RestoreSensor):
             self._restored_attributes = {
                 key: value
                 for key, value in last_state.attributes.items()
-                if key in ("profile", "profile_id", "identified", "user_index", "measured_at")
+                if key in (
+                    "profile", "profile_id", "identified", "user_index", "measured_at",
+                    "previous_value", "previous_measured_at",
+                )
             }
 
     @property
@@ -219,8 +242,6 @@ class RenphoProfileSensor(CoordinatorEntity, RestoreSensor):
         data = self._data
         if data is None:
             return self._restored_value
-        self._restored_value = None
-        self._restored_attributes = {}
         return _value(data, self.entity_description.key)
 
     @property
@@ -233,6 +254,19 @@ class RenphoProfileSensor(CoordinatorEntity, RestoreSensor):
         )
         if CONF_SCALE_USER_INDEX in self.profile:
             attributes["scale_user_index"] = self.profile[CONF_SCALE_USER_INDEX]
+        previous = self.coordinator.previous_profile_measurements.get(self._profile_id)
+        if previous is not None:
+            return _with_previous_value(attributes, previous, self.entity_description.key)
+        if self._restored_value is not None:
+            # After a restart, the first live measurement compares with the value
+            # that was current before that restart, not with its older predecessor.
+            previous_value = self._restored_value
+            if isinstance(previous_value, datetime):
+                previous_value = previous_value.isoformat()
+            attributes["previous_value"] = previous_value
+            restored_at = self._restored_attributes.get("measured_at")
+            if restored_at is not None:
+                attributes["previous_measured_at"] = restored_at
         return attributes
 
 

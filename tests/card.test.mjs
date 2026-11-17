@@ -88,6 +88,10 @@ test("all fourteen values have unique keys and suffixes", () => {
       "protein", "lean_body_mass", "muscle_mass", "body_age", "last_measurement",
     ],
   );
+  metrics.slice(0, -1).forEach((metric) => {
+    assert.ok(["up", "down"].includes(metric.improvement), `${metric.key} has a trend direction`);
+  });
+  assert.equal(metrics.at(-1).improvement, null);
 });
 
 test("selected values derive the installed entity IDs from the weight sensor", () => {
@@ -131,6 +135,81 @@ test("configuration validates entity and metric names but permits an empty selec
   assert.equal(card.getCardSize(), 1);
   card.setConfig({ entity: "sensor.renpho_r_msb01_weight", metrics: ["weight", "bmi"] });
   assert.deepEqual([...card._config.metrics], ["weight", "bmi"]);
+  assert.throws(() => card.setConfig({
+    entity: "sensor.renpho_r_msb01_weight", trend_directions: { weight: "sideways" },
+  }));
+  assert.throws(() => card.setConfig({
+    entity: "sensor.renpho_r_msb01_weight", trend_directions: { unknown: "up" },
+  }));
+});
+
+test("numeric tiles color progress and keep unchanged or incomplete values neutral", () => {
+  const card = new Card();
+  card.shadowRoot = new FakeShadowRoot();
+  card.setConfig({
+    entity: "sensor.renpho_r_msb01_weight",
+    metrics: ["weight", "body_water", "body_fat", "bone_mass", "body_age", "last_measurement"],
+  });
+  card._hass = {
+    states: {
+      "sensor.renpho_r_msb01_weight": {
+        state: "69.50", attributes: { unit_of_measurement: "kg", previous_value: 70.0 },
+      },
+      "sensor.renpho_r_msb01_body_water": {
+        state: "55.0", attributes: { unit_of_measurement: "%", previous_value: 54.0 },
+      },
+      "sensor.renpho_r_msb01_body_fat": {
+        state: "23.0", attributes: { unit_of_measurement: "%", previous_value: 22.0 },
+      },
+      "sensor.renpho_r_msb01_bone_mass": {
+        state: "3.00", attributes: { unit_of_measurement: "kg", previous_value: 3.0 },
+      },
+      "sensor.renpho_r_msb01_body_age": {
+        state: "unavailable", attributes: { unit_of_measurement: "years", previous_value: 40 },
+      },
+      "sensor.renpho_r_msb01_last_measurement": {
+        state: "2026-01-02T00:00:00+00:00",
+        attributes: { previous_value: "2026-01-01T00:00:00+00:00" },
+      },
+    },
+  };
+  renderCard.call(card);
+  const tiles = card.shadowRoot.getElementById("grid").children;
+  const arrows = tiles.map((tile) => tile.children[1].children[2]);
+  assert.equal(arrows[0].textContent, "▼");
+  assert.equal(arrows[0].className, "trend good");
+  assert.match(arrows[0].title, /^Good progress: down from 70 kg/);
+  assert.equal(arrows[1].textContent, "▲");
+  assert.equal(arrows[1].className, "trend good");
+  assert.equal(arrows[2].textContent, "▲");
+  assert.equal(arrows[2].className, "trend bad");
+  assert.match(arrows[2].title, /^Bad progress: up from 22 %/);
+  assert.equal(arrows[3].textContent, "→");
+  assert.equal(arrows[3].className, "trend neutral");
+  assert.equal(arrows[4], undefined);
+  assert.equal(arrows[5], undefined);
+  assert.match(tiles[0].attributes["aria-label"], /Good progress/);
+});
+
+test("trend direction overrides support personal goals", () => {
+  const card = new Card();
+  card.shadowRoot = new FakeShadowRoot();
+  card.setConfig({
+    entity: "sensor.renpho_r_msb01_weight",
+    metrics: ["weight"],
+    trend_directions: { weight: "up" },
+  });
+  card._hass = {
+    states: {
+      "sensor.renpho_r_msb01_weight": {
+        state: "71.0", attributes: { unit_of_measurement: "kg", previous_value: 70.0 },
+      },
+    },
+  };
+  renderCard.call(card);
+  const arrow = card.shadowRoot.getElementById("grid").children[0].children[1].children[2];
+  assert.equal(arrow.textContent, "▲");
+  assert.equal(arrow.className, "trend good");
 });
 
 test("rendering shows only selected values and preserves unavailable states", () => {

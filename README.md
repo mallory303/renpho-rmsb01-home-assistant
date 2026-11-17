@@ -78,6 +78,17 @@ The integration includes a dashboard card with a **visual editor**. Open a dashb
 
 Select any value tile to open its normal Home Assistant history/more-info dialog. The card uses the entity registry to resolve each person's actual entity IDs, including renamed entities, and falls back to the shared sensors when no per-person mapping exists. It distinguishes waiting for the scale, missing entities, and unassigned measurements. The card resource is copied to `/local/` and registered automatically, including a content hash for reliable updates and restarts.
 
+### Progress arrows
+
+Every numeric tile compares its value with the **previous completed measurement for that same person**. Shared tiles use the previous shared measurement instead. A small **green ▲/▼** marks movement in the configured beneficial direction, **red ▲/▼** marks the opposite, and a gray **→** means no change. No arrow appears until a previous value exists. Per-person arrows and their comparison baselines survive Home Assistant restarts; an unassigned Auto measurement never changes a person's baseline. The timestamp tile does not display a trend arrow.
+
+The default display conventions are:
+
+- **Lower is better:** weight, BMI, body fat, subcutaneous fat, visceral fat, and body age.
+- **Higher is better:** body water, muscle percentage, muscle mass, bone mass, lean body mass, protein, and basal metabolic rate.
+
+These are configurable display conventions, not a medical assessment. For example, increasing weight may be your goal. Override any metric with `trend_directions` in YAML; valid directions are `up` and `down`.
+
 Equivalent YAML:
 
 ```yaml
@@ -95,6 +106,9 @@ metrics:
   - bone_mass
   - body_age
   - last_measurement
+trend_directions:
+  weight: up
+  basal_metabolic_rate: down
 ```
 
 The shared sibling entity IDs are derived from the weight sensor's prefix. `user_entity` and `view_entity` optionally override the two derived select entity IDs. Optional YAML `entities` overrides remain available for shared/fallback sensors:

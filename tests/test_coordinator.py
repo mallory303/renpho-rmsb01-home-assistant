@@ -71,7 +71,10 @@ def bare_coordinator(entry):
     coordinator.entry = entry
     coordinator.address = entry.data["address"]
     coordinator.hass = SimpleNamespace(bus=SimpleNamespace(async_fire=lambda *args: None))
+    coordinator.data = None
+    coordinator.previous_data = None
     coordinator.profile_measurements = {}
+    coordinator.previous_profile_measurements = {}
     coordinator._session_lock = asyncio.Lock()
     coordinator._admin = None
     coordinator._last_attempt = 0
@@ -132,6 +135,28 @@ class AttributionTest(unittest.TestCase):
         coordinator._classify_result(result, False)
         self.assertEqual(result["profile"], "User B")
         self.assertEqual(list(coordinator.profile_measurements), ["profile-b"])
+
+    def test_previous_values_are_shared_and_per_person_without_cross_contamination(self):
+        configured = profile(scale_user_index=2, scale_user_key=111)
+        coordinator = bare_coordinator(entry_for([configured]))
+        first = measurement(2)
+        coordinator._classify_result(first, True)
+        self.assertIsNone(coordinator.previous_data)
+
+        coordinator.data = first
+        second = measurement(2)
+        second["metrics"]["weight_kg"] = 69.5
+        second["measured_at"] = "2026-01-02T00:00:00+00:00"
+        coordinator._classify_result(second, True)
+        self.assertIs(coordinator.previous_data, first)
+        self.assertIs(coordinator.previous_profile_measurements["profile-a"], first)
+
+        coordinator.data = second
+        unknown = measurement(7)
+        coordinator._classify_result(unknown, True)
+        self.assertIs(coordinator.previous_data, second)
+        self.assertIs(coordinator.previous_profile_measurements["profile-a"], first)
+        self.assertIs(coordinator.profile_measurements["profile-a"], second)
 
 
 class EnrollmentTest(unittest.IsolatedAsyncioTestCase):

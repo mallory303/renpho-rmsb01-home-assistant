@@ -50,7 +50,9 @@ class RenphoCoordinator(ActiveBluetoothDataUpdateCoordinator):
         self._session: RenphoSession | None = None
         self._admin: RenphoUserAdmin | None = None
         self._session_lock = asyncio.Lock()
+        self.previous_data: dict[str, Any] | None = None
         self.profile_measurements: dict[str, dict[str, Any]] = {}
+        self.previous_profile_measurements: dict[str, dict[str, Any]] = {}
         self.viewed_profile_id = active_profile(entry)[CONF_PROFILE_ID]
         super().__init__(
             hass,
@@ -111,6 +113,7 @@ class RenphoCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
     def _classify_result(self, result: dict[str, Any], automatic: bool) -> None:
         """Attach only explicit slot mappings; unknown users never alter history."""
+        self.previous_data = self.data
         if automatic:
             user_index = result["metadata"]["user_index"]
             profile = profile_for_scale_user(self.entry, user_index)
@@ -136,7 +139,11 @@ class RenphoCoordinator(ActiveBluetoothDataUpdateCoordinator):
             return
         result["profile"] = profile[CONF_PROFILE_NAME]
         result["profile_id"] = profile[CONF_PROFILE_ID]
-        self.profile_measurements[profile[CONF_PROFILE_ID]] = result
+        profile_id = profile[CONF_PROFILE_ID]
+        previous = self.profile_measurements.get(profile_id)
+        if previous is not None:
+            self.previous_profile_measurements[profile_id] = previous
+        self.profile_measurements[profile_id] = result
         _LOGGER.info(
             "R-MSB01 measurement for %s: %.2f kg, BMI %.1f, body fat %.1f%%",
             profile[CONF_PROFILE_NAME],
