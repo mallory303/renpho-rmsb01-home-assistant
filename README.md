@@ -74,9 +74,9 @@ The integration includes a dashboard card with a **visual editor**. Open a dashb
 2. Use **Measurement mode** to choose **Auto** or a forced visitor profile.
 3. Use **View measurement history for** to choose whose per-person values appear. This selector changes only the dashboard view and does not connect to the scale.
 4. Open **Values to display** and select exactly which of the 14 measurements you want.
-5. Optionally change the card title or hide either selector, then save.
+5. Optionally change the card title, set **History range (days)** (default **30**, range 1–365), or hide either selector, then save.
 
-Select any value tile to open its normal Home Assistant history/more-info dialog. The card uses the entity registry to resolve each person's actual entity IDs, including renamed entities, and falls back to the shared sensors when no per-person mapping exists. It distinguishes waiting for the scale, missing entities, and unassigned measurements. The card resource is copied to `/local/` and registered automatically, including a content hash for reliable updates and restarts.
+Select any value tile to open the full Home Assistant **History** page for that entity over the configured time range, defaulting to **30 days**. YAML `history_days` provides the same setting. The card uses the entity registry to resolve each person's actual entity IDs, including renamed entities, and falls back to the shared sensors when no per-person mapping exists. It distinguishes waiting for the scale, missing entities, and unassigned measurements. The card resource is copied to `/local/` and registered automatically, including a content hash for reliable updates and restarts.
 
 ### Progress arrows
 
@@ -95,6 +95,7 @@ Equivalent YAML:
 type: custom:renpho-rmsb01-card
 title: Renpho Scale
 entity: sensor.renpho_r_msb01_weight
+history_days: 30
 show_user_selector: true
 show_view_selector: true
 metrics:

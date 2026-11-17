@@ -61,6 +61,7 @@ class RenphoScaleCard extends HTMLElement {
       type: "custom:renpho-rmsb01-card",
       title: "Renpho Scale",
       entity,
+      history_days: 30,
       metrics: [...DEFAULT_METRICS],
     };
   }
@@ -125,11 +126,16 @@ class RenphoScaleCard extends HTMLElement {
         throw new Error("Each trend direction must use a known metric and up or down.");
       }
     });
+    const historyDays = config.history_days === undefined ? 30 : config.history_days;
+    if (!Number.isInteger(historyDays) || historyDays < 1 || historyDays > 365) {
+      throw new Error("History days must be a whole number from 1 to 365.");
+    }
     this._config = {
       title: "Renpho Scale",
       show_user_selector: true,
       show_view_selector: true,
       ...config,
+      history_days: historyDays,
       metrics: [...metrics],
       trend_directions: { ...trendDirections },
     };
@@ -341,6 +347,24 @@ class RenphoScaleCard extends HTMLElement {
     status.classList.toggle("error", isError);
   }
 
+  _historyPath(entityId, now = new Date()) {
+    const end = now;
+    const start = new Date(end.getTime() - this._config.history_days * 86400000);
+    const params = new URLSearchParams({
+      entity_id: entityId,
+      start_date: start.toISOString(),
+      end_date: end.toISOString(),
+      back: "1",
+    });
+    return `/history?${params.toString()}`;
+  }
+
+  _openHistory(entityId) {
+    const path = this._historyPath(entityId);
+    window.history.pushState(null, "", path);
+    fireEvent(window, "location-changed", { replace: false });
+  }
+
   _render() {
     if (!this.shadowRoot || !this._config) {
       return;
@@ -473,7 +497,7 @@ class RenphoScaleCard extends HTMLElement {
         readingRow.append(arrow);
       }
       tile.append(label, readingRow);
-      tile.addEventListener("click", () => fireEvent(this, "hass-more-info", { entityId }));
+      tile.addEventListener("click", () => this._openHistory(entityId));
       return tile;
     });
     grid.replaceChildren(...tiles);
@@ -521,6 +545,13 @@ class RenphoScaleCardEditor extends HTMLElement {
     this._form.schema = [
       { name: "title", selector: { text: {} } },
       { name: "entity", required: true, selector: { entity: { domain: "sensor" } } },
+      {
+        name: "history_days",
+        required: true,
+        selector: {
+          number: { min: 1, max: 365, step: 1, unit_of_measurement: "days", mode: "box" },
+        },
+      },
       { name: "user_entity", selector: { entity: { domain: "select" } } },
       { name: "show_user_selector", selector: { boolean: {} } },
       { name: "view_entity", selector: { entity: { domain: "select" } } },
@@ -539,6 +570,7 @@ class RenphoScaleCardEditor extends HTMLElement {
     this._form.computeLabel = (schema) => ({
       title: "Card title",
       entity: "Weight sensor",
+      history_days: "History range (days)",
       user_entity: "User selector entity (optional)",
       show_user_selector: "Show user selector",
       view_entity: "Viewed-user selector entity (optional)",
@@ -557,6 +589,7 @@ class RenphoScaleCardEditor extends HTMLElement {
     return {
       title: this._config.title === undefined ? "Renpho Scale" : this._config.title,
       entity: this._config.entity || "sensor.renpho_r_msb01_weight",
+      history_days: this._config.history_days === undefined ? 30 : this._config.history_days,
       user_entity: this._config.user_entity || "",
       show_user_selector: this._config.show_user_selector !== false,
       view_entity: this._config.view_entity || "",

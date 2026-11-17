@@ -62,8 +62,14 @@ function loadCard() {
         return this.shadowRoot;
       }
     },
-    CustomEvent: class {},
+    CustomEvent: class {
+      constructor(type, options = {}) {
+        this.type = type;
+        this.detail = options.detail;
+      }
+    },
     document: { createElement: () => new FakeElement() },
+    URLSearchParams,
     console,
   };
   vm.createContext(sandbox);
@@ -141,6 +147,68 @@ test("configuration validates entity and metric names but permits an empty selec
   assert.throws(() => card.setConfig({
     entity: "sensor.renpho_r_msb01_weight", trend_directions: { unknown: "up" },
   }));
+  assert.throws(() => card.setConfig({
+    entity: "sensor.renpho_r_msb01_weight", history_days: 0,
+  }));
+  assert.throws(() => card.setConfig({
+    entity: "sensor.renpho_r_msb01_weight", history_days: 1.5,
+  }));
+});
+
+test("tiles open the full History page with a configurable 30-day default", () => {
+  const card = new Card();
+  card.setConfig({
+    entity: "sensor.renpho_r_msb01_weight",
+    metrics: ["weight"],
+  });
+  assert.equal(card._config.history_days, 30);
+  const now = new Date("2026-11-17T12:00:00.000Z");
+  const path = card._historyPath("sensor.user_a_weight", now);
+  const params = new URLSearchParams(path.split("?")[1]);
+  assert.ok(path.startsWith("/history?"));
+  assert.equal(params.get("entity_id"), "sensor.user_a_weight");
+  assert.equal(params.get("start_date"), "2026-10-18T12:00:00.000Z");
+  assert.equal(params.get("end_date"), "2026-11-17T12:00:00.000Z");
+  assert.equal(params.get("back"), "1");
+
+  const navigations = [];
+  const events = [];
+  sandbox.window.history = { pushState: (...args) => navigations.push(args) };
+  sandbox.window.dispatchEvent = (event) => events.push(event);
+  card._openHistory("sensor.user_a_weight");
+  assert.equal(navigations.length, 1);
+  const actualPath = navigations[0][2];
+  assert.ok(actualPath.startsWith("/history?"));
+  const actualParams = new URLSearchParams(actualPath.split("?")[1]);
+  assert.equal(actualParams.get("entity_id"), "sensor.user_a_weight");
+  assert.equal(
+    Date.parse(actualParams.get("end_date")) - Date.parse(actualParams.get("start_date")),
+    30 * 86400000,
+  );
+  assert.equal(events[0].type, "location-changed");
+  assert.equal(events[0].detail.replace, false);
+
+  card.shadowRoot = new FakeShadowRoot();
+  card._hass = {
+    states: {
+      "sensor.renpho_r_msb01_weight": { state: "70", attributes: {} },
+    },
+  };
+  renderCard.call(card);
+  let openedEntity;
+  card._openHistory = (entityId) => { openedEntity = entityId; };
+  card.shadowRoot.getElementById("grid").children[0].listeners.click();
+  assert.equal(openedEntity, "sensor.renpho_r_msb01_weight");
+
+  card.setConfig({
+    entity: "sensor.renpho_r_msb01_weight",
+    metrics: ["weight"],
+    history_days: 7,
+  });
+  const customParams = new URLSearchParams(
+    card._historyPath("sensor.user_a_weight", now).split("?")[1],
+  );
+  assert.equal(customParams.get("start_date"), "2026-11-10T12:00:00.000Z");
 });
 
 test("numeric tiles color progress and keep unchanged or incomplete values neutral", () => {
