@@ -1,6 +1,8 @@
 """Shared latest-measurement sensors and stable per-person sensor sets."""
 
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta
+from functools import partial
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -24,6 +26,8 @@ from .const import (
 )
 from .entity_ids import entity_unique_id
 from .profiles import get_profiles
+
+_LOGGER = logging.getLogger(__name__)
 
 SENSORS = (
     SensorEntityDescription(
@@ -152,6 +156,48 @@ def _with_previous_value(
     return attributes
 
 
+def _previous_from_states(states: list[Any], current_measured_at: str):
+    """Find the latest distinct recorded measurement, ignoring restart copies."""
+    for state in reversed(states):
+        if state.state in ("unknown", "unavailable"):
+            continue
+        measured_at = state.attributes.get("measured_at")
+        if not measured_at or measured_at == current_measured_at:
+            continue
+        try:
+            return float(state.state), measured_at
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+async def _async_previous_from_history(hass, entity_id: str, current_measured_at: str):
+    """Recover an upgrade baseline from this entity's own recorder history."""
+    try:
+        from homeassistant.components.recorder import get_instance
+        from homeassistant.components.recorder.history import get_significant_states
+
+        start_time = datetime.fromisoformat(current_measured_at) - timedelta(days=365)
+        history = await get_instance(hass).async_add_executor_job(
+            partial(
+                get_significant_states,
+                hass,
+                start_time,
+                entity_ids=[entity_id],
+                include_start_time_state=False,
+                significant_changes_only=False,
+            )
+        )
+    except Exception:
+        _LOGGER.debug(
+            "Could not recover previous value for %s from recorder history",
+            entity_id,
+            exc_info=True,
+        )
+        return None
+    return _previous_from_states(history.get(entity_id, []), current_measured_at)
+
+
 class RenphoSensor(CoordinatorEntity, SensorEntity):
     """Backward-compatible latest-measurement sensor, including unassigned users."""
 
@@ -232,6 +278,20 @@ class RenphoProfileSensor(CoordinatorEntity, RestoreSensor):
                     "previous_value", "previous_measured_at",
                 )
             }
+        if (
+            self.entity_description.key != "measured_at"
+            and self._restored_value is not None
+            and self._restored_attributes.get("previous_value") is None
+            and self._restored_attributes.get("measured_at") is not None
+        ):
+            previous = await _async_previous_from_history(
+                self.hass,
+                self.entity_id,
+                self._restored_attributes["measured_at"],
+            )
+            if previous is not None and self._data is None:
+                self._restored_attributes["previous_value"] = previous[0]
+                self._restored_attributes["previous_measured_at"] = previous[1]
 
     @property
     def available(self) -> bool:

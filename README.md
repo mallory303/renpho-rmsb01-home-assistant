@@ -80,7 +80,7 @@ Select any value tile to open its normal Home Assistant history/more-info dialog
 
 ### Progress arrows
 
-Every numeric tile compares its value with the **previous completed measurement for that same person**. Shared tiles use the previous shared measurement instead. A small **green ▲/▼** marks movement in the configured beneficial direction, **red ▲/▼** marks the opposite, and a gray **→** means no change. No arrow appears until a previous value exists. Per-person arrows and their comparison baselines survive Home Assistant restarts; an unassigned Auto measurement never changes a person's baseline. The timestamp tile does not display a trend arrow.
+Every numeric tile compares its value with the **previous completed measurement for that same person**. Shared tiles use the previous shared measurement instead. A small **green ▲/▼** marks movement in the configured beneficial direction, **red ▲/▼** marks the opposite, and a gray **→** means no change. Per-person arrows and their comparison baselines survive Home Assistant restarts; an unassigned Auto measurement never changes a person's baseline. When upgrading an installation that has no saved baseline, each per-person sensor recovers the preceding distinct measurement from its own recorder history, ignoring unavailable states and duplicate restart states. This makes existing measurements show their arrows immediately after the upgrade when recorder history is available. Without a recovered baseline, the first new measurement compares against the restored current value. The timestamp tile does not display a trend arrow.
 
 The default display conventions are:
 
@@ -144,7 +144,7 @@ node --check custom_components/renpho_rmsb01/www/renpho-rmsb01-card.js
 node --test tests/card.test.mjs
 ```
 
-The tests cover synthetic live/stored TN decoding, resistance transforms, manual and automatic GATT handshakes, stored-user reads, registration/sync rejection paths, explicit slot attribution, unknown-user isolation, enrollment safety, profile migration and selection, advertisement validation, disconnect handling, frontend resource registration, and card measurement/view selection.
+The tests cover synthetic live/stored TN decoding, resistance transforms, manual and automatic GATT handshakes, stored-user reads, registration/sync rejection paths, explicit slot attribution, unknown-user isolation, enrollment safety, profile migration and selection, advertisement validation, disconnect handling, recorder-history baseline recovery, frontend resource registration, and card measurement/view selection.
 
 ## Scope
 

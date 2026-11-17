@@ -167,7 +167,10 @@ class ProfileSensorTest(unittest.IsolatedAsyncioTestCase):
 
         entity.async_get_last_sensor_data = restored_value
         entity.async_get_last_state = restored_state
-        await entity.async_added_to_hass()
+        entity.hass = SimpleNamespace()
+        entity.entity_id = "sensor.synthetic_user_a_weight"
+        with patch.object(sensor_module, "_async_previous_from_history", return_value=None):
+            await entity.async_added_to_hass()
         self.assertTrue(entity.available)
         self.assertEqual(entity.native_value, 68.5)
         self.assertEqual(entity.extra_state_attributes["profile_id"], "profile-a")
@@ -228,6 +231,101 @@ class ProfileSensorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             attributes["previous_measured_at"], "2025-12-31T00:00:00+00:00"
         )
+
+    async def test_upgrade_recovers_previous_measurement_from_own_history(self):
+        entry, coordinator = make_entry()
+        entity = sensor_module.RenphoProfileSensor(
+            coordinator, entry.options["profiles"][0], sensor_module.SENSORS[0]
+        )
+        entity.hass = SimpleNamespace()
+        entity.entity_id = "sensor.synthetic_user_a_weight"
+
+        async def restored_value():
+            return SimpleNamespace(native_value=68.5)
+
+        async def restored_state():
+            return SimpleNamespace(attributes={
+                "profile": "User A", "profile_id": "profile-a", "identified": True,
+                "user_index": 2, "measured_at": "2026-01-01T00:00:00+00:00",
+            })
+
+        entity.async_get_last_sensor_data = restored_value
+        entity.async_get_last_state = restored_state
+        previous = (69.0, "2025-12-31T00:00:00+00:00")
+        with patch.object(
+            sensor_module, "_async_previous_from_history", return_value=previous
+        ) as history:
+            await entity.async_added_to_hass()
+
+        history.assert_awaited_once_with(
+            entity.hass, entity.entity_id, "2026-01-01T00:00:00+00:00"
+        )
+        self.assertEqual(entity.native_value, 68.5)
+        self.assertEqual(entity.extra_state_attributes["previous_value"], 69.0)
+        self.assertEqual(
+            entity.extra_state_attributes["previous_measured_at"],
+            "2025-12-31T00:00:00+00:00",
+        )
+
+    async def test_history_recovery_ignores_restart_copies_and_unavailable_states(self):
+        states = [
+            SimpleNamespace(
+                state="69.0",
+                attributes={"measured_at": "2025-12-31T00:00:00+00:00"},
+            ),
+            SimpleNamespace(state="unavailable", attributes={}),
+            SimpleNamespace(
+                state="68.5",
+                attributes={"measured_at": "2026-01-01T00:00:00+00:00"},
+            ),
+            SimpleNamespace(
+                state="68.5",
+                attributes={"measured_at": "2026-01-01T00:00:00+00:00"},
+            ),
+        ]
+        self.assertEqual(
+            sensor_module._previous_from_states(
+                states, "2026-01-01T00:00:00+00:00"
+            ),
+            (69.0, "2025-12-31T00:00:00+00:00"),
+        )
+
+    async def test_recorder_query_is_time_bounded_and_entity_scoped(self):
+        recorder = ModuleType("homeassistant.components.recorder")
+        recorder.__path__ = []
+        history = ModuleType("homeassistant.components.recorder.history")
+        calls = []
+
+        def get_significant_states(hass, start_time, **kwargs):
+            calls.append((hass, start_time, kwargs))
+            return {"sensor.synthetic_user_a_weight": []}
+
+        class RecorderInstance:
+            async def async_add_executor_job(self, job):
+                return job()
+
+        recorder.get_instance = lambda hass: RecorderInstance()
+        history.get_significant_states = get_significant_states
+        modules = {
+            "homeassistant.components.recorder": recorder,
+            "homeassistant.components.recorder.history": history,
+        }
+        hass = SimpleNamespace()
+        with patch.dict(sys.modules, modules):
+            result = await sensor_module._async_previous_from_history(
+                hass,
+                "sensor.synthetic_user_a_weight",
+                "2026-01-01T00:00:00+00:00",
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual(len(calls), 1)
+        called_hass, start_time, kwargs = calls[0]
+        self.assertIs(called_hass, hass)
+        self.assertEqual(start_time.isoformat(), "2025-01-01T00:00:00+00:00")
+        self.assertEqual(kwargs["entity_ids"], ["sensor.synthetic_user_a_weight"])
+        self.assertFalse(kwargs["include_start_time_state"])
+        self.assertFalse(kwargs["significant_changes_only"])
 
 
 if __name__ == "__main__":
